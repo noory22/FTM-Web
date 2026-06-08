@@ -327,7 +327,7 @@ const CreateConfig = () => {
     }
   };
   const handleBack = () => {
-    navigate('/');
+    navigate('/main-menu');
   };
 
   // ADDED: Generate curve letters based on number of curves

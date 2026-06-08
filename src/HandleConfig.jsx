@@ -130,7 +130,7 @@ const HandleConfig = ({ mode = 'load' }) => {
   };
 
   const handleBack = () => {
-    navigate('/');
+    navigate('/main-menu');
   };
 
   const getPageTitle = () => {

@@ -9,13 +9,111 @@ const MainMenu = () => {
   const navigate = useNavigate();
   const [showPowerDropdown, setShowPowerDropdown] = useState(false);
   const dropdownRef = useRef(null);
-
+  const [userRole, setUserRole] = useState(null);
 
   // Connection state
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [connectionChecked, setConnectionChecked] = useState(false);
   const [emergencyActive, setEmergencyActive] = useState(false);
   const [powerActive, setPowerActive] = useState(false);
+
+  // Get user role from localStorage
+  useEffect(() => {
+    const user = localStorage.getItem('user');
+    if (user) {
+      const userData = JSON.parse(user);
+      setUserRole(userData.role);
+      console.log('User role:', userData.role);
+    } else {
+      // If no user found, redirect to login
+      navigate('/');
+    }
+  }, [navigate]);
+
+  // Define all menu options
+  const allMenuOptions = [
+    {
+      id: 'load-config',
+      title: 'Load Configuration',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+      ),
+      description: 'Load existing configuration files',
+      gradient: 'from-blue-500 to-cyan-500',
+      allowedRoles: ['admin', 'operator'] // Both can access
+    },
+    {
+      id: 'manual-mode',
+      title: 'Manual Mode',
+      icon: (
+        <img
+          src={manualIcon}
+          alt="Manual Mode"
+          className="w-8 h-8 object-contain"
+        />
+      ),
+      description: 'Manually control the testing process',
+      gradient: 'from-purple-500 to-pink-500',
+      allowedRoles: ['admin', 'operator'] // Both can access
+    },
+    {
+      id: 'process-logs',
+      title: 'Show Process Logs',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+      ),
+      description: 'View detailed process logs and history',
+      gradient: 'from-green-500 to-emerald-500',
+      allowedRoles: ['admin', 'operator'] // Both can access
+    },
+    {
+      id: 'create-config',
+      title: 'Create Configuration',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      ),
+      description: 'Create new configuration settings',
+      gradient: 'from-orange-500 to-amber-500',
+      allowedRoles: ['admin'] // Only admin can access
+    },
+    {
+      id: 'delete-config',
+      title: 'Delete Configuration',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      ),
+      description: 'Remove existing configuration files',
+      variant: 'danger',
+      gradient: 'from-red-500 to-rose-500',
+      allowedRoles: ['admin'] // Only admin can access
+    },
+    {
+      id: 'check-updates',
+      title: 'Check for Updates',
+      icon: (
+        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      ),
+      description: 'Check if a newer version is available on GitHub',
+      gradient: 'from-indigo-500 to-purple-500',
+      allowedRoles: ['admin'] // Only admin can access
+    }
+  ];
+
+  // Filter menu options based on user role
+  const menuOptions = userRole 
+    ? allMenuOptions.filter(option => option.allowedRoles.includes(userRole))
+    : [];
 
   useEffect(() => {
     // Initial checks
@@ -46,79 +144,6 @@ const MainMenu = () => {
     };
   }, []);
 
-  const menuOptions = [
-    {
-      id: 'load-config',
-      title: 'Load Configuration',
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-        </svg>
-      ),
-      description: 'Load existing configuration files',
-      gradient: 'from-blue-500 to-cyan-500'
-    },
-    {
-      id: 'manual-mode',
-      title: 'Manual Mode',
-      icon: (
-        <img
-          src={manualIcon}
-          alt="Manual Mode"
-          className="w-8 h-8 object-contain"
-        />
-      ),
-      description: 'Manually control the testing process',
-      gradient: 'from-purple-500 to-pink-500'
-    },
-    {
-      id: 'process-logs',
-      title: 'Show Process Logs',
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-        </svg>
-      ),
-      description: 'View detailed process logs and history',
-      gradient: 'from-green-500 to-emerald-500'
-    },
-    {
-      id: 'create-config',
-      title: 'Create Configuration',
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      ),
-      description: 'Create new configuration settings',
-      gradient: 'from-orange-500 to-amber-500'
-    },
-    {
-      id: 'delete-config',
-      title: 'Delete Configuration',
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-        </svg>
-      ),
-      description: 'Remove existing configuration files',
-      variant: 'danger',
-      gradient: 'from-red-500 to-rose-500'
-    },
-    {
-      id: 'check-updates',
-      title: 'Check for Updates',
-      icon: (
-        <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-        </svg>
-      ),
-      description: 'Check if a newer version is available on GitHub',
-      gradient: 'from-indigo-500 to-purple-500'
-    }
-  ];
-
   // Handle modbus status updates
   const handleModbusStatus = (event) => {
     const status = event.detail;
@@ -141,6 +166,7 @@ const MainMenu = () => {
       setConnectionChecked(true);
     }
   };
+  
   // Check initial emergency status
   const checkInitialEmergencyStatus = async () => {
     try {
@@ -262,6 +288,8 @@ const MainMenu = () => {
   };
 
   const handleLogout = () => {
+    // Clear user data from localStorage
+    localStorage.removeItem('user');
     navigate('/');
     setShowPowerDropdown(false);
   };
@@ -270,38 +298,17 @@ const MainMenu = () => {
     setShowPowerDropdown(!showPowerDropdown);
   };
 
-  // Connection status display
-  // const getConnectionDisplay = () => {
-  //   if (!connectionChecked) {
-  //     return {
-  //       text: 'Checking connection...',
-  //       color: 'text-gray-500',
-  //       bgColor: 'bg-gray-100',
-  //       borderColor: 'border-gray-200',
-  //       icon: <Usb className="w-4 h-4 animate-pulse" />
-  //     };
-  //   }
-
-  //   if (connectionStatus === 'connected') {
-  //     return {
-  //       text: 'USB Connected',
-  //       color: 'text-green-700',
-  //       bgColor: 'bg-green-100',
-  //       borderColor: 'border-green-200',
-  //       icon: <Usb className="w-4 h-4" />
-  //     };
-  //   } else {
-  //     return {
-  //       text: 'USB Disconnected',
-  //       color: 'text-red-700',
-  //       bgColor: 'bg-red-100',
-  //       borderColor: 'border-red-200',
-  //       icon: <Usb className="w-4 h-4" />
-  //     };
-  //   }
-  // };
-
-  // const connectionInfo = getConnectionDisplay();
+  // Show loading or redirect if no user role
+  if (!userRole) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-300">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-linear-to-br from-slate-50 via-blue-50 to-indigo-100 shrink-0 ">
@@ -312,6 +319,12 @@ const MainMenu = () => {
           <h1 className="text-3xl font-bold bg-linear-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent">
             Main Menu
           </h1>
+          {/* Display user role badge */}
+          <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+            userRole === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'
+          }`}>
+            {userRole === 'admin' ? 'Administrator' : 'Operator'}
+          </div>
           {emergencyActive && (
             <div className="bg-red-600 text-white px-4 py-2 rounded-full animate-pulse border-2 border-red-400 shadow-lg flex items-center gap-2">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -332,13 +345,7 @@ const MainMenu = () => {
             </span>
           </div>
 
-          {/* <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${connectionInfo.bgColor} border ${connectionInfo.borderColor}`}>
-            {connectionInfo.icon}
-            <span className={`text-sm font-medium ${connectionInfo.color}`}>
-              {connectionInfo.text}
-            </span>
-          </div> */}
-                    {/* USB Status Indicator - Updated to match power button style */}
+          {/* USB Status Indicator */}
           <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${connectionStatus === 'connected' ? 'bg-green-100 border-green-200' : 'bg-red-100 border-red-200'} border`}>
             <Usb className={`w-4 h-4 ${connectionStatus === 'connected' ? 'text-green-700' : 'text-red-700'}`} />
             <span className={`text-sm font-medium ${connectionStatus === 'connected' ? 'text-green-700' : 'text-red-700'}`}>
@@ -355,20 +362,38 @@ const MainMenu = () => {
             </button>
           )}
         </div>
-        {/* Direct Power Button - No Dropdown */}
-        <button
-          onClick={() => {
-            const confirmed = window.confirm("Are you sure you want to exit?");
-            if (confirmed) {
-              window.close();
-            }
-          }}
-          className="group bg-linear-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl lg:rounded-2xl w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 flex items-center justify-center transition-all duration-300 hover:-translate-y-1 shadow-lg hover:shadow-xl border border-red-400/30"
-        >
-          <Power className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 group-hover:scale-110 transition-transform duration-300" />
-        </button>
-
-
+        
+        {/* Power Button with Logout Option */}
+        <div className="relative" ref={dropdownRef}>
+          <button
+            onClick={togglePowerDropdown}
+            className="group bg-linear-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl lg:rounded-2xl w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 flex items-center justify-center transition-all duration-300 hover:-translate-y-1 shadow-lg hover:shadow-xl border border-red-400/30"
+          >
+            <Power className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 group-hover:scale-110 transition-transform duration-300" />
+          </button>
+          
+          {/* Dropdown Menu */}
+          {showPowerDropdown && (
+            <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 py-1 z-50">
+              <button
+                onClick={handleLogout}
+                className="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100 transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                Logout
+              </button>
+              <button
+                onClick={handleExit}
+                className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 transition-colors flex items-center gap-2"
+              >
+                <Power className="w-4 h-4" />
+                Exit Application
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       {/* Main Content */}
@@ -467,10 +492,10 @@ const MainMenu = () => {
                 {/* Product Header */}
                 <div className="mb-8">
                   <h1 className="text-8xl font-bold bg-linear-to-r from-gray-900 via-gray-800 to-gray-700 bg-clip-text text-transparent mb-4 tracking-tight leading-none">
-                    CTTM
+                    FTM
                   </h1>
                   <h2 className="text-4xl font-bold bg-linear-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent mb-6 leading-tight">
-                    Catheter Trackability Testing Machine
+                    Flexural Testing Machine
                   </h2>
                 </div>
 
