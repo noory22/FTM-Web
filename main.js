@@ -114,19 +114,19 @@ let csvFilePath = null;
 // Modbus / PLC settings - UPDATED BASED ON PYTHON CODE
 // -------------------------
 let PORT = null; // Auto-detected
-const BAUDRATE = 9600;
+const BAUDRATE = 115200;
 const TIMEOUT = 0; // Using buffered read, timeout not as critical in this config
 
 const COIL_POW = 1003
 const COIL_EMER = 1004
 const COIL_HOME = 2001;
-const COIL_LLS = 1000;
+const COIL_LLS = 3922; // Modbus address for M1922 (2000 + 1922)
 const COIL_START = 2002;
 const COIL_STOP = 2003;
 const COIL_RESET = 2004;
 const COIL_HEATING = 2012;
 const COIL_HEATER = 2005;
-const COIL_RETRACTION = 2006;
+const COIL_RETRACTION = 2006;``
 const COIL_MANUAL = 2070;
 const COIL_INSERTION = 2008;
 const COIL_RET = 2009;
@@ -139,6 +139,7 @@ const REG_MANUAL_DISTANCE = 6550; // 1 register (16-bit integer)
 
 // Global State
 let isConnected = false;
+let lastPulseTime = Date.now();
 const client = new ModbusRTU();
 
 // PLC Cache & Command Queue
@@ -164,9 +165,44 @@ let isLoopRunning = false;
 // ============================
 const CONFIG_FILE_PATH = path.join(app.getPath('documents'), 'CTTM.json');
 
+// -------------------------
+// Helper: Verify Heartbeat Pulses on COIL_LLS - NEW
+// -------------------------
+async function verifyPulses(clientInstance) {
+  let pulseCount = 0;
+  let lastVal = null;
+  const pollInterval = 100; // ms
+  const maxWaitTime = 10000; // 10 seconds timeout
+  const startTime = Date.now();
+
+  console.log("🔍 Verifying 3 continuous pulses (0 -> 1 transitions) on COIL_LLS (1922)...");
+
+  while (Date.now() - startTime < maxWaitTime) {
+    const res = await clientInstance.readCoils(COIL_LLS, 1);
+    const val = res.data[0] ? 1 : 0;
+
+    if (lastVal !== null) {
+      if (lastVal === 0 && val === 1) {
+        pulseCount++;
+        console.log(`📡 Pulse ${pulseCount} detected (0 -> 1)`);
+      }
+    }
+    lastVal = val;
+
+    if (pulseCount >= 3) {
+      console.log("✅ Successfully verified 3 pulses. Connection confirmed.");
+      return true;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  console.log(`❌ Failed to detect 3 pulses within ${maxWaitTime}ms. Found ${pulseCount} pulses.`);
+  return false;
+}
 
 // -------------------------
-// Connect Modbus - UPDATED
+// Connect Modbus - UPDATED WITH PULSE VERIFICATION
 // -------------------------
 async function connectModbus(targetPort) {
   try {
@@ -186,9 +222,17 @@ async function connectModbus(targetPort) {
 
     client.setID(1);
     client.setTimeout(200); // 200ms timeout for faster disconnection detection
+
+    // Verify pulses before declaring connected
+    const verified = await verifyPulses(client);
+    if (!verified) {
+      throw new Error("Could not verify 3 pulses on COIL_LLS");
+    }
+
     isConnected = true;
+    lastPulseTime = Date.now(); // Reset pulse timer on successful connection
     PORT = targetPort; // Update global
-    console.log("✅ Modbus connected on", PORT);
+    console.log("✅ Modbus connected and pulse verified on", PORT);
 
     // Update UI to show connection status
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -197,7 +241,11 @@ async function connectModbus(targetPort) {
 
     return true;
   } catch (err) {
+    console.warn(`❌ Connection/verification failed on ${targetPort}:`, err.message);
     isConnected = false;
+    try {
+      if (client.isOpen) client.close();
+    } catch (e) {}
     return false;
   }
 }
@@ -222,16 +270,8 @@ async function findAndConnectPort() {
 
       const success = await connectModbus(portPath);
       if (success) {
-        // Try to read a coil to verify responsiveness
-        try {
-          await client.readCoils(COIL_LLS, 1);
-          console.log(`✅ Verified Modbus device on ${portPath}`);
-          return true;
-        } catch (readErr) {
-          console.warn(`⚠️ Connected to ${portPath} but read failed. Next...`);
-          isConnected = false;
-          client.close();
-        }
+        console.log(`✅ Verified Modbus device on ${portPath}`);
+        return true;
       }
     }
 
@@ -253,15 +293,8 @@ async function autoConnectPort() {
 
     // 1. Try last known PORT first if exists
     if (PORT && await connectModbus(PORT)) {
-      try {
-        await client.readCoils(COIL_LLS, 1);
-        console.log(`✅ Quick re-connect successful on ${PORT}`);
-        return true;
-      } catch (e) {
-        console.log(`⚠️ Quick connect failed verify. Scanning all...`);
-        isConnected = false;
-        client.close();
-      }
+      console.log(`✅ Quick re-connect successful on ${PORT}`);
+      return true;
     }
 
     // 2. Scan all
@@ -720,6 +753,7 @@ async function processModbusLoop() {
             mainWindow.webContents.send('lls-status', currentLLSState.toString());
           }
           lastLLSState = currentLLSState;
+          lastPulseTime = Date.now(); // Update pulse timer on transition
         }
       } catch (e) { }
 
@@ -792,6 +826,13 @@ async function processModbusLoop() {
         plcState.manualDistance = new Int16Array(new Uint16Array([mdRes.data[0]]).buffer)[0];
         cycleSuccess = true;
       } catch (e) { }
+
+      // Heartbeat pulse check: if pulse has stopped, trigger disconnection
+      const HEARTBEAT_TIMEOUT = 4000; // 4 seconds timeout
+      if (isConnected && (Date.now() - lastPulseTime > HEARTBEAT_TIMEOUT)) {
+        console.warn(`❌ PLC heartbeat stopped (no transition detected on COIL_LLS for ${Date.now() - lastPulseTime}ms).`);
+        cycleSuccess = false;
+      }
 
       // 4. Connection Success/Failure Tracking
       if (cycleSuccess) {
