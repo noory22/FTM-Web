@@ -98,12 +98,12 @@ ipcRenderer.on('update-progress', (event, progress) => {
     detail: progress
   }));
 });
-ipcRenderer.on('update_available',()=>{
+ipcRenderer.on('update_available', () => {
   alert("New update available! Downloading...");
 });
-ipcRenderer.on('update_ready',()=>{
+ipcRenderer.on('update_ready', () => {
   const confirmUpdate = confirm("Update ready. Restart now:");
-  if (confirmUpdate){
+  if (confirmUpdate) {
     ipcRenderer.send('restart_app');
   }
 });

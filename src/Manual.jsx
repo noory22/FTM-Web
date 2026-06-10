@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ChevronLeft, Power, Thermometer, Zap, RotateCw, Camera, Flame, Usb, Move, TrendingUp, Hand, ChevronRight } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, Power, Usb, Move, TrendingUp, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -14,7 +15,7 @@ import {
 } from 'chart.js';
 
 import clampIcon from "./assets/Clamp.png";
-// Register ChartJS components
+
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -27,59 +28,45 @@ ChartJS.register(
 );
 
 const Manual = () => {
-  const videoRef = useRef(null);
+  const navigate = useNavigate();
   const streamRef = useRef(null);
-  const [showConnectionError, setShowConnectionError] = useState(false);
-  const [temperature, setTemperature] = useState('--');
+  const movementTimeoutRef = useRef(null);
+  const probeIntervalRef = useRef(null);
+
   const [force, setForce] = useState('--');
-  const [cameraError, setCameraError] = useState(false);
-  const [cameraLoading, setCameraLoading] = useState(true);
-  const [controls, setControls] = useState({
-    heater: false,
-    homing: false,
-    clamp: false,
-    insertion: false,
-    retraction: false
-  });
+  const [probeDistance, setProbeDistance] = useState('--');
+  const [catheterDistance, setCatheterDistance] = useState('--');
 
-  const [manualDistance, setManualDistance] = useState('--');
   const [graphData, setGraphData] = useState([]);
-  const forwardData = graphData.filter(p => p.direction === "forward");
-  const backwardData = graphData.filter(p => p.direction === "backward");
+  const forwardData = graphData.filter(p => p.direction === 'forward');
+  const backwardData = graphData.filter(p => p.direction === 'backward');
 
-  const [catheterPosition, setCatheterPosition] = useState(0);
+  const [clamp, setClamp] = useState(false);
+  const [probeDown, setProbeDown] = useState(false);
+  const [probeUp, setProbeUp] = useState(false);
+  const [catheterForward, setCatheterForward] = useState(false);
+  const [catheterBack, setCatheterBack] = useState(false);
 
-  // Connection status state
   const [connectionStatus, setConnectionStatus] = useState({
     connected: false,
     port: '--',
     lastCheck: null,
-    dataSource: 'real'
   });
+  const [emergencyActive, setEmergencyActive] = useState(false);
+  const [showConnectionError, setShowConnectionError] = useState(false);
+  const [manualModeActive, setManualModeActive] = useState(false);
 
-  // State to track COIL_LLS status
-  const [coilLLSStatus, setCoilLLSStatus] = useState(false);
-  const [powerActive, setPowerActive] = useState(false);
-
-  // Chart configuration
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    animation: {
-      duration: 0
-    },
-    interaction: {
-      intersect: false,
-      mode: 'index',
-    },
+    animation: { duration: 0 },
+    interaction: { intersect: false, mode: 'index' },
     plugins: {
-      legend: {
-        display: false
-      },
+      legend: { display: false },
       tooltip: {
         mode: 'index',
         intersect: false,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        backgroundColor: 'rgba(0,0,0,0.7)',
         titleColor: '#fff',
         bodyColor: '#fff',
         borderColor: '#3b82f6',
@@ -88,39 +75,22 @@ const Manual = () => {
         padding: 12,
         displayColors: false,
         callbacks: {
-          label: function (context) {
-            return `Force: ${context.parsed.y.toFixed(2)} mN`;
-          },
-          title: function (context) {
-            return `Distance: ${context[0].parsed.x.toFixed(2)} mm`;
-          }
-        }
-      }
+          label: ctx => `Force: ${ctx.parsed.y.toFixed(2)} mN`,
+          title: ctx => `Probe Dist: ${ctx[0].parsed.x.toFixed(2)} mm`,
+        },
+      },
     },
     scales: {
       x: {
         type: 'linear',
         title: {
           display: true,
-          text: 'Distance (mm)',
+          text: 'Probe Distance (mm)',
           color: '#6b7280',
-          font: {
-            size: 12,
-            weight: 'bold'
-          }
+          font: { size: 12, weight: 'bold' },
         },
-        grid: {
-          color: 'rgba(229, 231, 235, 0.5)',
-          drawBorder: true,
-          borderColor: 'rgba(229, 231, 235, 1)'
-        },
-        ticks: {
-          color: '#6b7280',
-          font: {
-            size: 11
-          },
-          maxTicksLimit: 10
-        }
+        grid: { color: 'rgba(229,231,235,0.5)' },
+        ticks: { color: '#6b7280', font: { size: 11 }, maxTicksLimit: 10 },
       },
       y: {
         type: 'linear',
@@ -128,67 +98,231 @@ const Manual = () => {
           display: true,
           text: 'Force (mN)',
           color: '#6b7280',
-          font: {
-            size: 12,
-            weight: 'bold'
-          }
+          font: { size: 12, weight: 'bold' },
         },
-        grid: {
-          color: 'rgba(229, 231, 235, 0.5)',
-          drawBorder: true,
-          borderColor: 'rgba(229, 231, 235, 1)'
-        },
-        ticks: {
-          color: '#6b7280',
-          font: {
-            size: 11
-          },
-          maxTicksLimit: 8
-        }
-      }
+        grid: { color: 'rgba(229,231,235,0.5)' },
+        ticks: { color: '#6b7280', font: { size: 11 }, maxTicksLimit: 8 },
+      },
     },
     elements: {
-      line: {
-        tension: 0,
-        borderWidth: 2.5,
-        fill: false
-      },
-      point: {
-        radius: 0,
-        hoverRadius: 5
-      }
-    }
+      line: { tension: 0, borderWidth: 2.5, fill: false },
+      point: { radius: 0, hoverRadius: 5 },
+    },
   };
 
-  // Prepare chart data
   const chartConfig = {
     datasets: [
       {
-        label: 'Forward Movement',
-        data: forwardData.map(point => ({ x: point.manualDistance, y: point.force })),
+        label: 'Probe Down',
+        data: forwardData.map(p => ({ x: p.probeDistance, y: p.force })),
         borderColor: '#3b82f6',
-        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+        backgroundColor: 'rgba(59,130,246,0.1)',
         fill: false,
         pointBackgroundColor: '#3b82f6',
         pointBorderColor: '#fff',
         pointHoverBackgroundColor: '#fff',
-        pointHoverBorderColor: '#3b82f6'
+        pointHoverBorderColor: '#3b82f6',
       },
       {
-        label: 'Backward Movement',
-        data: backwardData.map(point => ({ x: point.manualDistance, y: point.force })),
+        label: 'Probe Up',
+        data: backwardData.map(p => ({ x: p.probeDistance, y: p.force })),
         borderColor: '#ef4444',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+        backgroundColor: 'rgba(239,68,68,0.1)',
         fill: false,
         pointBackgroundColor: '#ef4444',
         pointBorderColor: '#fff',
         pointHoverBackgroundColor: '#fff',
-        pointHoverBorderColor: '#ef4444'
-      }
-    ]
+        pointHoverBorderColor: '#ef4444',
+      },
+    ],
   };
 
-  // Check connection status on load and setup listener
+  // Activate Manual Mode on component mount
+  useEffect(() => {
+    const activateManualMode = async () => {
+      if (connectionStatus.connected && !emergencyActive) {
+        try {
+          const result = await window.api.manualModeActivate();
+          if (result.success) {
+            setManualModeActive(true);
+            console.log("Manual mode activated");
+          }
+        } catch (error) {
+          console.error("Failed to activate manual mode:", error);
+        }
+      }
+    };
+
+    activateManualMode();
+
+    // Deactivate manual mode on component unmount
+    return () => {
+      const deactivateManualMode = async () => {
+        try {
+          if (probeIntervalRef.current) {
+            clearInterval(probeIntervalRef.current);
+          }
+          if (movementTimeoutRef.current) {
+            clearTimeout(movementTimeoutRef.current);
+          }
+          await window.api.manualModeDeactivate();
+          setManualModeActive(false);
+          console.log("Manual mode deactivated");
+        } catch (error) {
+          console.error("Failed to deactivate manual mode:", error);
+        }
+      };
+      deactivateManualMode();
+    };
+  }, [connectionStatus.connected, emergencyActive]);
+
+  const resetLiveValues = () => {
+    setForce('--');
+    setProbeDistance('--');
+    setCatheterDistance('--');
+    setClamp(false);
+    setProbeDown(false);
+    setProbeUp(false);
+    setCatheterForward(false);
+    setCatheterBack(false);
+  };
+
+  // Handle Probe Down with continuous movement
+  const handleProbeDownStart = async () => {
+    if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+
+    // Clear any existing timeouts/intervals
+    if (movementTimeoutRef.current) {
+      clearTimeout(movementTimeoutRef.current);
+    }
+    if (probeIntervalRef.current) {
+      clearInterval(probeIntervalRef.current);
+    }
+
+    try {
+      // Send probe down command (M5)
+      const result = await window.api.probeDown();
+      if (result.success) {
+        setProbeDown(true);
+        setProbeUp(false);
+
+        // Set interval to continuously send command while holding
+        probeIntervalRef.current = setInterval(async () => {
+          if (probeDown) {
+            await window.api.probeDown();
+          }
+        }, 500);
+
+        // Auto-stop after 5 seconds for safety
+        movementTimeoutRef.current = setTimeout(async () => {
+          await handleProbeStop();
+        }, 5000);
+      }
+    } catch (error) {
+      console.error("Probe down error:", error);
+    }
+  };
+
+  // Handle Probe Up with continuous movement
+  const handleProbeUpStart = async () => {
+    if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+
+    // Clear any existing timeouts/intervals
+    if (movementTimeoutRef.current) {
+      clearTimeout(movementTimeoutRef.current);
+    }
+    if (probeIntervalRef.current) {
+      clearInterval(probeIntervalRef.current);
+    }
+
+    try {
+      // Send probe up command (M4)
+      const result = await window.api.probeUp();
+      if (result.success) {
+        setProbeUp(true);
+        setProbeDown(false);
+
+        // Set interval to continuously send command while holding
+        probeIntervalRef.current = setInterval(async () => {
+          if (probeUp) {
+            await window.api.probeUp();
+          }
+        }, 500);
+
+        // Auto-stop after 5 seconds for safety
+        movementTimeoutRef.current = setTimeout(async () => {
+          await handleProbeStop();
+        }, 5000);
+      }
+    } catch (error) {
+      console.error("Probe up error:", error);
+    }
+  };
+
+  // Handle Probe Stop
+  const handleProbeStop = async () => {
+    if (movementTimeoutRef.current) {
+      clearTimeout(movementTimeoutRef.current);
+    }
+    if (probeIntervalRef.current) {
+      clearInterval(probeIntervalRef.current);
+      probeIntervalRef.current = null;
+    }
+
+    try {
+      await window.api.probeStop();
+      setProbeDown(false);
+      setProbeUp(false);
+    } catch (error) {
+      console.error("Probe stop error:", error);
+    }
+  };
+
+  // Handle Clamp Toggle (M3)
+  const handleClampToggle = async () => {
+    if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+
+    try {
+      const newState = !clamp;
+      const result = await window.api.clampControl(newState);
+      if (result.success) {
+        setClamp(result.clampState);
+      }
+    } catch (error) {
+      console.error("Clamp toggle error:", error);
+    }
+  };
+
+  // Handle Catheter Forward (M6)
+  const handleCatheterForward = async () => {
+    if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+
+    try {
+      const result = await window.api.catheterForward();
+      if (result.success) {
+        setCatheterForward(true);
+        setTimeout(() => setCatheterForward(false), 2000);
+      }
+    } catch (error) {
+      console.error("Catheter forward error:", error);
+    }
+  };
+
+  // Handle Catheter Backward (M7)
+  const handleCatheterBackward = async () => {
+    if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+
+    try {
+      const result = await window.api.catheterBackward();
+      if (result.success) {
+        setCatheterBack(true);
+        setTimeout(() => setCatheterBack(false), 2000);
+      }
+    } catch (error) {
+      console.error("Catheter backward error:", error);
+    }
+  };
+
   useEffect(() => {
     const checkConnection = () => {
       window.api.checkConnection()
@@ -197,600 +331,186 @@ const Manual = () => {
             connected: status.connected,
             port: status.port || '--',
             lastCheck: status.timestamp,
-            dataSource: status.connected ? 'real' : 'real'
           });
-
           if (!status.connected) {
             setShowConnectionError(true);
-            setTemperature('--');
-            setForce('--');
-            setManualDistance('--');
-            setCoilLLSStatus(false);
+            resetLiveValues();
+            setManualModeActive(false);
           }
         })
-        .catch(error => {
-          console.error('Error checking connection:', error);
-          setConnectionStatus({
-            connected: false,
-            port: '--',
-            lastCheck: new Date().toISOString(),
-            dataSource: 'real'
-          });
+        .catch(() => {
+          setConnectionStatus({ connected: false, port: '--', lastCheck: new Date().toISOString() });
           setShowConnectionError(true);
-          setTemperature('--');
-          setForce('--');
-          setManualDistance('--');
-          setCoilLLSStatus(false);
+          resetLiveValues();
+          setManualModeActive(false);
         });
     };
 
-    // Check connection initially
     checkConnection();
+    const connInterval = setInterval(checkConnection, 5000);
 
-    // Set up interval to check connection periodically (every 5 seconds)
-    const intervalId = setInterval(checkConnection, 5000);
-
-    // Listen for connection status updates from main process
-    const handleModbusStatusChange = (event) => {
-      const status = event.detail;
-      const newConnected = status === 'connected';
-      setConnectionStatus(prev => ({
-        ...prev,
-        connected: newConnected,
-        dataSource: 'real'
-      }));
-
-      if (status === 'disconnected') {
+    const handleModbusStatus = (e) => {
+      const connected = e.detail === 'connected';
+      setConnectionStatus(prev => ({ ...prev, connected }));
+      if (!connected) {
         setShowConnectionError(true);
-        setTemperature('--');
-        setForce('--');
-        setManualDistance('--');
-        setCoilLLSStatus(false);
-
-        // Reset all control states when disconnected
-        setControls({
-          heater: false,
-          homing: false,
-          clamp: false,
-          insertion: false,
-          retraction: false
-        });
+        resetLiveValues();
+        setManualModeActive(false);
       } else {
         setShowConnectionError(false);
       }
     };
+    window.addEventListener('modbus-status-change', handleModbusStatus);
 
-    window.addEventListener('modbus-status-change', handleModbusStatusChange);
+    const handleEmergency = (e) => setEmergencyActive(Boolean(e.detail));
+    window.addEventListener('emergency-status-change', handleEmergency);
 
-    // Listen for power status updates
-    const handlePowerStatusChange = (event) => {
-      setPowerActive(event.detail === true);
-    };
-    window.addEventListener('power-status-change', handlePowerStatusChange);
+    window.api.checkEmergencyStatus()
+      .then(s => setEmergencyActive(Boolean(s.active)))
+      .catch(() => { });
 
-    // Initial power status check
-    window.api.checkPowerStatus().then(status => {
-      setPowerActive(status.active);
-    }).catch(err => console.error('Error checking initial power status:', err));
-
-    // Cleanup function
     return () => {
-      clearInterval(intervalId);
-      window.removeEventListener('modbus-status-change', handleModbusStatusChange);
-      window.removeEventListener('power-status-change', handlePowerStatusChange);
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => {
-          track.stop();
-        });
-      }
+      clearInterval(connInterval);
+      window.removeEventListener('modbus-status-change', handleModbusStatus);
+      window.removeEventListener('emergency-status-change', handleEmergency);
+      if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+      if (movementTimeoutRef.current) clearTimeout(movementTimeoutRef.current);
+      if (probeIntervalRef.current) clearInterval(probeIntervalRef.current);
     };
   }, []);
 
-  // COIL_LLS monitoring via events from main process
-  useEffect(() => {
-    console.log("🔍 Setting up COIL_LLS monitoring...");
-
-    // Event listener for real-time COIL_LLS updates from main process
-    const handleLLSStatusChange = (status) => {
-      const isLLSTrue = status === 'true' || status === true;
-
-      console.log(`🔄 COIL_LLS Event Received: ${isLLSTrue ? 'TRUE' : 'FALSE'}`);
-
-      setCoilLLSStatus(isLLSTrue);
-
-      if (isLLSTrue) {
-        setControls(prev => ({
-          ...prev,
-          homing: false,
-          retraction: false
-        }));
-        setGraphData([]);
-        console.log("✅ Home position reached - Retraction stopped (via event)");
-      }
-
-      if (!isLLSTrue) {
-        console.log("🔄 Motor moved away from home - COIL_LLS is FALSE");
-      }
-    };
-
-    const handleCustomEvent = (event, status) => {
-      console.log("📡 Received LLS status:", status);
-      handleLLSStatusChange(status);
-    };
-
-    window.electron?.receive?.('lls-status', handleCustomEvent) ||
-      window.api?.onLlsStatus?.(handleCustomEvent);
-
-    const handleWindowEvent = (e) => {
-      if (e.detail !== undefined) {
-        handleLLSStatusChange(e.detail);
-      }
-    };
-
-    window.addEventListener('lls-status-change', handleWindowEvent);
-
-    console.log("✅ COIL_LLS monitoring setup complete");
-
-    return () => {
-      console.log("🧹 Cleaning up COIL_LLS monitoring");
-      window.removeEventListener('lls-status-change', handleWindowEvent);
-    };
-  }, []);
-
-  // Handle heater toggle
-  const handleHeaterToggle = () => {
-    window.api.checkConnection()
-      .then(status => {
-        if (!status.connected) {
-          alert('PLC is not connected. Please connect to PLC first.');
-          setShowConnectionError(true);
-          return;
-        }
-
-        window.api.heating()
-          .then(result => {
-            if (result && result.success) {
-              setControls(prev => ({ ...prev, heater: result.heating }));
-              console.log('Heater toggled to:', result.heating, 'Result:', result);
-            } else {
-              throw new Error(result?.message || 'Heater operation failed');
-            }
-          })
-          .catch(error => {
-            console.error('Heater control error:', error.message);
-            setShowConnectionError(true);
-          });
-      })
-      .catch(error => {
-        console.error('Connection check error:', error);
-      });
-  };
-
-  // Handle Clamp toggle
-  const handleClampToggle = () => {
-    window.api.checkConnection()
-      .then(status => {
-        if (!status.connected) {
-          alert('PLC is not connected. Please connect to PLC first.');
-          setShowConnectionError(true);
-          return;
-        }
-
-        window.api.clamp()
-          .then(result => {
-            if (result && result.success) {
-              setControls(prev => ({ ...prev, clamp: !prev.clamp }));
-              console.log('Clamp toggled:', result);
-            } else {
-              throw new Error(result?.message || 'Clamp operation failed');
-            }
-          })
-          .catch(error => {
-            console.error('Clamp control error:', error.message);
-            setShowConnectionError(true);
-          });
-      })
-      .catch(error => {
-        console.error('Connection check error:', error);
-      });
-  };
-
-  // Handle Insertion (Forward) - Toggle behavior based on PLC state
-  const handleInsertion = () => {
-    window.api.checkConnection()
-      .then(status => {
-        if (!status.connected) {
-          alert('PLC is not connected. Please connect to PLC first.');
-          setShowConnectionError(true);
-          return;
-        }
-
-        // If insertion is currently active in UI, we want to turn it OFF
-        if (controls.insertion) {
-          console.log('Attempting to STOP insertion...');
-
-          // Call insertion API again - according to main.js, this will toggle it OFF
-          window.api.insertion()
-            .then(result => {
-              console.log('Insertion stop result:', result);
-              if (result && result.success) {
-                // Update UI state based on the result from PLC
-                setControls(prev => ({
-                  ...prev,
-                  insertion: false,  // The API toggles to OFF
-                  retraction: false   // Ensure retraction is off
-                }));
-                console.log('Insertion stopped by user');
-              }
-            })
-            .catch(error => {
-              console.error('Insertion stop error:', error);
-              setShowConnectionError(true);
-            });
-        }
-        // If insertion is not active AND retraction is not active, turn it ON
-        else if (!controls.retraction) {
-          console.log('Attempting to START insertion...');
-          window.api.insertion()
-            .then(result => {
-              console.log('Insertion start result:', result);
-              if (result && result.success) {
-                // According to main.js, when insertion turns ON, it sets retraction to false
-                setControls(prev => ({
-                  ...prev,
-                  insertion: true,   // The API toggles to ON
-                  retraction: false   // PLC ensures retraction is off
-                }));
-                console.log('Insertion started by user');
-              }
-            })
-            .catch(error => {
-              console.error('Insertion start error:', error);
-              setShowConnectionError(true);
-            });
-        }
-        // If retraction is active, show a message (button should be disabled, but just in case)
-        else {
-          console.log('Cannot start insertion while retraction is active');
-          alert('Please stop retraction first by pressing the Retraction button again');
-        }
-      })
-      .catch(error => {
-        console.error('Connection check error:', error);
-      });
-  };
-
-  // Handle Retraction (Backward) - Toggle behavior based on PLC state
-  const handleRetraction = () => {
-    window.api.checkConnection()
-      .then(status => {
-        if (!status.connected) {
-          alert('PLC is not connected. Please connect to PLC first.');
-          setShowConnectionError(true);
-          return;
-        }
-
-        // If retraction is currently active in UI, we want to turn it OFF
-        if (controls.retraction) {
-          console.log('Attempting to STOP retraction...');
-
-          // Call retraction API again - according to main.js, this will toggle it OFF
-          window.api.ret()
-            .then(result => {
-              console.log('Retraction stop result:', result);
-              if (result && result.success) {
-                // Update UI state based on the result from PLC
-                setControls(prev => ({
-                  ...prev,
-                  retraction: false,  // The API toggles to OFF
-                  insertion: false     // Ensure insertion is off
-                }));
-                console.log('Retraction stopped by user');
-              }
-            })
-            .catch(error => {
-              console.error('Retraction stop error:', error);
-              setShowConnectionError(true);
-            });
-        }
-        // If retraction is not active AND insertion is not active, turn it ON
-        else if (!controls.insertion) {
-          console.log('Attempting to START retraction...');
-          window.api.ret()
-            .then(result => {
-              console.log('Retraction start result:', result);
-              if (result && result.success) {
-                // According to main.js, when retraction turns ON, it sets insertion to false
-                setControls(prev => ({
-                  ...prev,
-                  retraction: true,   // The API toggles to ON
-                  insertion: false     // PLC ensures insertion is off
-                }));
-                console.log('Retraction started by user');
-              }
-            })
-            .catch(error => {
-              console.error('Retraction start error:', error);
-              setShowConnectionError(true);
-            });
-        }
-        // If insertion is active, show a message (button should be disabled, but just in case)
-        else {
-          console.log('Cannot start retraction while insertion is active');
-          alert('Please stop insertion first by pressing the Insertion button again');
-        }
-      })
-      .catch(error => {
-        console.error('Connection check error:', error);
-      });
-  };
-
-  // Emergency stop - reset both states
-  const emergencyStop = () => {
-    console.log('EMERGENCY STOP triggered');
-
-    // First, if insertion is active, turn it off
-    if (controls.insertion) {
-      window.api.insertion()
-        .then(() => {
-          setControls(prev => ({ ...prev, insertion: false }));
-        })
-        .catch(e => console.log('Insertion stop error:', e));
-    }
-
-    // If retraction is active, turn it off
-    if (controls.retraction) {
-      window.api.ret()
-        .then(() => {
-          setControls(prev => ({ ...prev, retraction: false }));
-        })
-        .catch(e => console.log('Retraction stop error:', e));
-    }
-  };
-
-  // Stop all movement
-  const stopAllMovement = () => {
-    window.api.checkConnection()
-      .then(status => {
-        if (!status.connected) return;
-
-        // Turn off both insertion and retraction if they're active
-        if (controls.insertion) {
-          window.api.insertion().catch(error => console.error('Error turning off insertion:', error));
-        }
-        if (controls.retraction) {
-          window.api.ret().catch(error => console.error('Error turning off retraction:', error));
-        }
-
-        setControls(prev => ({
-          ...prev,
-          insertion: false,
-          retraction: false
-        }));
-      })
-      .catch(error => console.error('Connection check error:', error));
-  };
-
-  const resetCatheter = () => {
-    window.api.checkConnection()
-      .then(status => {
-        if (!status.connected) {
-          alert('PLC is not connected. Please connect to PLC first.');
-          setShowConnectionError(true);
-          return;
-        }
-
-        // Stop all movement before homing
-        stopAllMovement();
-
-        setGraphData([]);
-        setControls(prev => ({ ...prev, homing: true }));
-        setCatheterPosition(0);
-
-        window.api.home()
-          .then(result => {
-            if (result.success) {
-              console.log('Homing initiated:', result);
-            } else {
-              setControls(prev => ({ ...prev, homing: false }));
-              throw new Error(result.message || 'Homing failed');
-            }
-          })
-          .catch(error => {
-            console.error('Homing error:', error.message);
-            setShowConnectionError(true);
-            setControls(prev => ({ ...prev, homing: false }));
-          });
-      })
-      .catch(error => {
-        console.error('Connection check error:', error);
-      });
-  };
-
-  const handleReconnect = async () => {
-    try {
-      console.log('Attempting to reconnect...');
-      const result = await window.api.reconnect();
-      if (result.success && result.connected) {
-        setShowConnectionError(false);
-        setConnectionStatus(prev => ({ ...prev, connected: true, dataSource: 'real' }));
-        console.log('Reconnect successful');
-      } else {
-        console.log('Reconnect failed');
-      }
-    } catch (error) {
-      console.error('Reconnect error:', error);
-    }
-  };
-
-  // Read PLC data periodically
   useEffect(() => {
     const readData = () => {
       window.api.readData()
         .then(data => {
           if (data.success) {
-            setForce(data.force_mN);
-            setTemperature(data.temperature);
+            // Force from REG_FORCE (R54) — 32-bit float
+            const f = Number(data.force_mN);
+            setForce(isFinite(f) ? f.toFixed(2) : '--');
 
-            const maxDistance = 1000;
-            const positionPercent = Math.min(100, (data.distance / maxDistance) * 100);
-            setCatheterPosition(positionPercent);
-            setManualDistance(data.manualDistance || 0);
- 
-            // Hardware-backed state synchronization for control labels/colors
-            setControls(prev => ({
-              ...prev,
-              clamp: data.clamp !== undefined ? Boolean(data.clamp) : prev.clamp,
-              heater: data.heater !== undefined ? Boolean(data.heater) : prev.heater,
-              insertion: data.insertion !== undefined ? Boolean(data.insertion) : prev.insertion,
-              retraction: data.retraction !== undefined ? Boolean(data.retraction) : prev.retraction
-            }));
+            // Probe Distance from REG_DISTANCE (R70)
+            const pd = Number(data.distance);
+            setProbeDistance(isFinite(pd) ? pd : '--');
 
-            if (data.coilLLS !== undefined) {
-              const newCoilLLSStatus = Boolean(data.coilLLS);
-              setCoilLLSStatus(newCoilLLSStatus);
+            // Catheter Distance from REG_MANUAL_DISTANCE (6550)
+            const cd = Number(data.catheterDistance);
+            setCatheterDistance(isFinite(cd) ? cd : '--');
 
-              if (newCoilLLSStatus) {
-                setControls(prev => ({
-                  ...prev,
-                  homing: false,
-                  retraction: false
-                }));
-              }
-            }
+            // Update coil indicator states from PLC feedback
+            if (data.clamp          !== undefined) setClamp(Boolean(data.clamp));
+            if (data.probeUp        !== undefined) setProbeUp(Boolean(data.probeUp));
+            if (data.probeDown      !== undefined) setProbeDown(Boolean(data.probeDown));
+            if (data.catheterForward !== undefined) setCatheterForward(Boolean(data.catheterForward));
+            if (data.catheterBack   !== undefined) setCatheterBack(Boolean(data.catheterBack));
 
+            // Update graph: x = probe distance, y = force
             setGraphData(prev => {
-              const x = Number(data.manualDistance);
+              const x = Number(data.distance);
               const y = Number(data.force_mN);
-
               if (isNaN(x) || isNaN(y)) return prev;
 
-              let direction = "forward";
-
+              let direction = 'forward';
               if (prev.length > 0) {
-                const lastX = prev[prev.length - 1].manualDistance;
-                direction = x < lastX ? "backward" : "forward";
+                const lastX = prev[prev.length - 1].probeDistance;
+                direction = x < lastX ? 'backward' : 'forward';
               }
 
-              const newPoint = {
-                manualDistance: x,
-                force: y,
-                direction,
-              };
-
-              const updated = [...prev, newPoint];
-
-              return updated.length > 200
-                ? updated.slice(updated.length - 200)
-                : updated;
+              const updated = [...prev, { probeDistance: x, force: y, direction }];
+              return updated.length > 200 ? updated.slice(updated.length - 200) : updated;
             });
+
           } else {
-            setForce('--');
-            setTemperature('--');
-            setManualDistance('--');
-            setCoilLLSStatus(false);
+            resetLiveValues();
           }
         })
-        .catch(error => {
-          console.error('Error reading PLC data:', error);
-          setForce('--');
-          setTemperature('--');
-          setManualDistance('--');
-          setCoilLLSStatus(false);
-        });
+        .catch(() => resetLiveValues());
     };
 
     let intervalId;
-    if (connectionStatus.connected) {
+    if (connectionStatus.connected && !emergencyActive) {
       readData();
       intervalId = setInterval(readData, 500);
     }
+    return () => { if (intervalId) clearInterval(intervalId); };
+  }, [connectionStatus.connected, emergencyActive]);
 
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
-  }, [connectionStatus.connected]);
-
-  const disableManualMode = () => {
-    window.api.checkConnection()
-      .then(status => {
-        if (status.connected) {
-          stopAllMovement();
-          window.api.disableManualMode()
-            .then(result => {
-              if (result.success) {
-                console.log('Manual mode disabled successfully');
-              }
-            })
-            .catch(error => console.error('Disable error:', error));
+  const handleReconnect = async () => {
+    try {
+      const result = await window.api.reconnect();
+      if (result.success && result.connected) {
+        setShowConnectionError(false);
+        setConnectionStatus(prev => ({ ...prev, connected: true }));
+        // Reactivate manual mode
+        const manualResult = await window.api.manualModeActivate();
+        if (manualResult.success) {
+          setManualModeActive(true);
         }
-      })
-      .catch(error => console.error('Connection check error:', error));
+      }
+    } catch (e) {
+      console.error('Reconnect error:', e);
+    }
   };
 
-  const isHomingButtonDisabled = !connectionStatus.connected || controls.homing || coilLLSStatus;
+  const circleClass = (active, activeColor) =>
+    `relative w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 flex items-center justify-center transition-all duration-300 shadow-lg ${active ? `${activeColor} text-white` : 'bg-white border-slate-300 text-slate-400'} ${(!connectionStatus.connected || emergencyActive || !manualModeActive) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-slate-400'}`;
 
-  // Movement disabled conditions:
-  // - No connection OR homing in progress
-  const isMovementDisabled = !connectionStatus.connected || controls.homing;
+  const statusBadge = (active, activeClasses, inactiveClasses, activeLabel, inactiveLabel) => (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1 rounded-full ${active ? activeClasses : inactiveClasses}`}>
+      <span className={`w-2 h-2 rounded-full shrink-0 ${active ? 'animate-pulse' : ''}`} />
+      {active ? activeLabel : inactiveLabel}
+    </span>
+  );
 
-  // Individual button disabled conditions:
-  // Insertion button disabled when: 
-  // 1. Movement is globally disabled
-  // 2. Retraction is currently active
-  const isInsertionDisabled = isMovementDisabled || controls.retraction;
+  // Check if controls should be enabled
+  const controlsEnabled = connectionStatus.connected && !emergencyActive && manualModeActive;
 
-  // Retraction button disabled when:
-  // 1. Movement is globally disabled
-  // 2. Insertion is currently active
-  const isRetractionDisabled = isMovementDisabled || controls.insertion;
+
+
+  const handleBackButton = async () => {
+    try {
+      console.log('Deactivating manual mode before leaving...');
+      // Call the deactivation API
+      await window.api.deactivateManual();
+      console.log('Manual mode deactivated successfully');
+    } catch (error) {
+      console.error('Failed to deactivate manual mode:', error);
+    } finally {
+      // Navigate back to main menu regardless of deactivation success/failure
+      navigate('/main-menu');
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-50 to-slate-100 p-4 md:p-6">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-6">
       <div className="w-full mx-auto">
-        {/* Header */}
-        {/* <div className="flex items-center justify-between mb-8"> */}
+
+        {/* ══════════════ HEADER ══════════════ */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 md:mb-8">
-          {/* <div className="flex items-center space-x-4"> */}
+
           <div className="flex items-center space-x-2 md:space-x-4">
             <button
-              onClick={() => {
-                window.api.checkConnection()
-                  .then(status => {
-                    if (status.connected) {
-                      stopAllMovement();
-                      window.api.disableManualMode()
-                        .catch(error => console.error('Disable error:', error));
-                    }
-                  })
-                  .catch(error => console.error('Connection check error:', error));
-
-                window.history.back();
-              }}
+              onClick={handleBackButton}
               className="p-2 hover:bg-white hover:shadow-md rounded-lg transition-all duration-200"
             >
               <ArrowLeft className="w-6 h-6 text-slate-600" />
             </button>
-
             <h1 className="text-2xl md:text-3xl font-bold text-slate-800">Manual Mode</h1>
           </div>
 
-          {/* <div className="flex items-center space-x-3"> */}
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {/* Power Status Badge */}
-            {/* <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${powerActive ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}> */}
-            <div className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg ${powerActive ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>
-              <Power className="w-4 h-4" />
-              <span className="text-sm font-medium">
-                POWERED {powerActive ? 'ON' : 'OFF'}
-              </span>
-            </div>
+            {emergencyActive && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 text-red-700 border border-red-300 animate-pulse">
+                <AlertTriangle className="w-4 h-4" />
+                <span className="text-sm font-semibold">EMERGENCY</span>
+              </div>
+            )}
 
-            {/* USB Connection Status Badge */}
-            {/* <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${connectionStatus.connected ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>
-              <Usb className="w-4 h-4" />
-              <span className="text-sm font-medium"> */}
+            {manualModeActive && controlsEnabled && (
+              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-100 text-green-700 border border-green-300">
+                <span className="text-sm font-semibold">MANUAL MODE ACTIVE</span>
+              </div>
+            )}
+
             <div className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg ${connectionStatus.connected ? 'bg-green-100 text-green-700 border border-green-200' : 'bg-red-100 text-red-700 border border-red-200'}`}>
               <Usb className="w-3 h-3 sm:w-4 sm:h-4" />
               <span className="text-xs sm:text-sm font-medium">
@@ -802,7 +522,6 @@ const Manual = () => {
               <button
                 onClick={handleReconnect}
                 className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-                title="Attempt to reconnect USB"
               >
                 Reconnect
               </button>
@@ -810,347 +529,245 @@ const Manual = () => {
 
             <button
               onClick={() => {
-                const confirmed = window.confirm("Are you sure you want to exit?");
-                if (confirmed) {
-                  disableManualMode();
-                  window.close();
-                }
+                if (window.confirm('Are you sure you want to exit?')) window.close();
               }}
-              className="group bg-linear-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white 
-            rounded-xl lg:rounded-2xl w-8 h-8 sm:w-12 sm:h-12 lg:w-14 lg:h-14 flex items-center justify-center transition-all 
-            duration-300 hover:-translate-y-1 shadow-lg hover:shadow-xl border border-red-400/30 shrink-0"
+              className="group bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl lg:rounded-2xl w-8 h-8 sm:w-12 sm:h-12 lg:w-14 lg:h-14 flex items-center justify-center transition-all duration-300 hover:-translate-y-1 shadow-lg hover:shadow-xl border border-red-400/30 shrink-0"
             >
               <Power className="w-3 h-3 sm:w-5 sm:h-5 lg:w-6 lg:h-6 group-hover:scale-110 transition-transform duration-300" />
             </button>
           </div>
         </div>
 
-        {/* Main Content */}
-        {/* <div className="grid grid-cols-1 xl:grid-cols-3 gap-6"> */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-          {/* Left Column - Graph and Sensors */}
-          {/* <div className="lg:col-span-2"> */}
-          {/* <div className="lg:col-span-2 flex flex-col w-full"> */}
-          <div className="lg:col-span-2 flex flex-col w-full space-y-6">
-            {/* Live Video Feed */}
-            <div className="xl:col-span-2">
-              {/* <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden"> */}
-              {/* <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden h-full flex flex-col"> */}
-              <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden h-full flex flex-col">
-                {/* Manual Distance Graph */}
-                {/* <div className="bg-white border-t border-slate-200 p-6"> */}
-                {/* <div className="bg-white border-t border-slate-200 p-4 md:p-6"> */}
-                {/* <div className="bg-white border-t border-slate-200 p-4 md:p-6 flex-1"> */}
-                {/* <div className="bg-white p-4 md:p-6 flex-1 flex flex-col"> */}
-                <div className="bg-white p-4 md:p-6 flex-1 flex flex-col w-full max-w-full overflow-x-auto">
-                  {/* <div className="flex items-center justify-between mb-6">
-                  <div className="flex items-center space-x-3"> */}
-                  {/* <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 md:mb-6"> */}
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 md:mb-6 shrink-0">
-                    <div className="flex items-center space-x-2 md:space-x-3">
-                      <div className="p-2 bg-linear-to-br from-blue-500 to-cyan-500 rounded-lg shadow-sm">
-                        <TrendingUp className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-xl font-semibold text-slate-800">
-                          Distance vs Force
-                        </h3>
-                        <p className="text-slate-500 text-xs font-medium">Real-time analysis</p>
-                      </div>
+        {/* ══════════════ MAIN GRID ══════════════ */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 items-start">
+
+          {/* ══════════ LEFT: Graph + Live Data ══════════ */}
+          <div className="flex flex-col w-full space-y-4 md:space-y-6 min-w-0">
+
+            {/* Graph card */}
+            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+              <div className="p-4 md:p-6">
+
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 md:mb-6">
+                  <div className="flex items-center space-x-2 md:space-x-3">
+                    <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg shadow-sm">
+                      <TrendingUp className="w-5 h-5 text-white" />
                     </div>
-                    {/* <div className="flex items-center space-x-6 bg-slate-50/50 px-4 py-2 rounded-xl border border-slate-100 shadow-sm"> */}
-                    <div className="flex items-center space-x-3 sm:space-x-6 bg-slate-50/50 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-slate-100 shadow-sm">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-1 bg-blue-500 rounded-full shadow-sm shadow-blue-500/50" />
-                        <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Insertion</span>
-                      </div>
-                      <div className="flex items-center space-x-3">
-                        <div className="w-8 h-1 bg-red-500 rounded-full shadow-sm shadow-red-500/50" />
-                        <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Retraction</span>
-                      </div>
+                    <div>
+                      <h3 className="text-xl font-semibold text-slate-800">Probe Distance vs Force</h3>
+                      <p className="text-slate-500 text-xs font-medium">Real-time analysis</p>
                     </div>
                   </div>
-
-                  {/* <div className="w-full h-100 relative"> */}
-                  <div className="w-full h-[calc(100%-120px)] min-h-137.5 relative">
-                    <Line
-                      data={chartConfig}
-                      options={chartOptions}
-                      redraw={false}
-                    />
+                  <div className="flex items-center space-x-3 sm:space-x-5 bg-slate-50/50 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-slate-100 shadow-sm">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-8 h-1 bg-blue-500 rounded-full" />
+                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Probe Down</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-8 h-1 bg-red-500 rounded-full" />
+                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Probe Up</span>
+                    </div>
                   </div>
                 </div>
 
+                <div className="w-full" style={{ height: '320px' }}>
+                  <Line data={chartConfig} options={chartOptions} redraw={false} />
+                </div>
               </div>
             </div>
 
-            {/* Right Column - Control Panel */}
-            <div className="space-y-4 md:space-y-6">
+            {/* Live Data card */}
+            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
+              <div className="grid grid-cols-3 gap-3 md:gap-6">
 
-              {/* Sensor Readings */}
-              {/* <div className="p-6 bg-slate-50 border-t border-slate-200"> */}
-              <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
-                {/* <div className="grid grid-cols-2 gap-6"> */}
-                {/* <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6"> */}
-                {/* <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6"> */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
-                  {/* Temperature */}
-                  {/* <div className="flex items-center space-x-4"> */}
-                  {/* <div className="flex items-center space-x-3 md:space-x-4"> */}
-                  {/* <div className="flex items-center space-x-3 md:space-x-4 bg-white"> */}
-                  <div className="flex items-center space-x-4 md:space-x-6 bg-white p-4 md:p-5 rounded-xl">
-                    <div className="p-3 bg-orange-100 rounded-xl">
-                      <Thermometer className="w-6 h-6 text-orange-600" />
-                    </div>
-                    <div>
-                      <p className="text-slate-600 text-sm font-medium">Temperature</p>
-                      <div className="flex items-center space-x-2">
-                        <div>
-                          <div
-                            className="h-full bg-orange-500 rounded-full transition-all duration-300"
-                            style={{ width: `${Math.min(100, (temperature / 40) * 100)}%` }}
-                          ></div>
-                        </div>
-                        {/* <span className="text-slate-800 font-bold text-lg"> */}
-                        <span className="text-slate-800 font-bold text-base md:text-lg">
-                          {temperature === '--' ? '-- °C' : (parseFloat(temperature) > 100 ? 'ERROR 01' : `${parseFloat(temperature).toFixed(1)}°C`)}
-                        </span>
-                      </div>
-                    </div>
+                {/* Force - R54 */}
+                <div className="flex items-center space-x-3 bg-slate-50 p-3 md:p-5 rounded-xl border border-slate-100">
+                  <div className="p-2 md:p-3 bg-blue-100 rounded-xl shrink-0">
+                    <svg className="w-5 h-5 md:w-6 md:h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
                   </div>
-
-                  {/* Force in mN */}
-                  {/* <div className="flex items-center space-x-4"> */}
-                  {/* <div className="flex items-center space-x-3 md:space-x-4"> */}
-                  <div className="flex items-center space-x-3 md:space-x-4 bg-white">
-                    <div className="p-3 bg-blue-100 rounded-xl">
-                      <Zap className="w-6 h-6 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="text-slate-600 text-sm font-medium">Force</p>
-                      <div className="flex items-center space-x-2">
-                        <div>
-                          <div
-                            className="h-full bg-blue-500 rounded-full transition-all duration-300"
-                            style={{ width: `${Math.min(100, (force / 2000) * 100)}%` }}
-                          ></div>
-                        </div>
-
-                        {/* <span className="text-slate-800 font-bold text-lg"> */}
-                        <span className="text-slate-800 font-bold text-base md:text-lg">
-                          {force === '--' ? '-- mN' : `${parseFloat(force).toFixed(2)} mN`}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Manual Movement Distance */}
-                  {/* <div className="flex items-center space-x-4 mt-3"> */}
-                  {/* <div className="flex items-center space-x-3 md:space-x-4 mt-2 md:mt-3"> */}
-                  <div className="flex items-center space-x-4 md:space-x-6 mt-2 md:mt-3 bg-white p-4 md:p-5 rounded-xl col-span-1">
-                    {/* <div className="flex items-center space-x-3 md:space-x-4 bg-white"></div> */}
-                    <div className="flex items-center space-x-4 md:space-x-6 bg-white p-4 md:p-5 rounded-xl">
-                      <div className="p-3 bg-emerald-100 rounded-xl">
-                        <Move className="w-6 h-6 text-emerald-600" />
-                      </div>
-
-                      <div>
-                        <p className="text-slate-600 text-sm font-medium">Distance</p>
-
-                        {/* <span className="text-slate-800 font-bold text-lg"> */}
-                        <span className="text-slate-800 font-bold text-base md:text-lg">
-                          {manualDistance === '--' ? '-- mm' : `${manualDistance} mm`}
-                        </span>
-                      </div>
+                  <div className="min-w-0">
+                    <p className="text-slate-500 text-xs font-medium mb-0.5 truncate">Force (R54)</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-slate-800 font-bold text-lg md:text-2xl">
+                        {force === '--' ? '--' : `${parseFloat(force).toFixed(2)}`}
+                      </span>
+                      <span className="text-slate-400 text-xs">mN</span>
                     </div>
                   </div>
                 </div>
+
+                {/* Probe Distance - R70 */}
+                <div className="flex items-center space-x-3 bg-slate-50 p-3 md:p-5 rounded-xl border border-slate-100">
+                  <div className="p-2 md:p-3 bg-blue-100 rounded-xl shrink-0">
+                    <ChevronDown className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-slate-500 text-xs font-medium mb-0.5 truncate">Probe Dist. (R70)</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-slate-800 font-bold text-lg md:text-2xl">
+                        {probeDistance === '--' ? '--' : `${probeDistance}`}
+                      </span>
+                      <span className="text-slate-400 text-xs">mm</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Catheter Distance - 6550 */}
+                <div className="flex items-center space-x-3 bg-slate-50 p-3 md:p-5 rounded-xl border border-slate-100">
+                  <div className="p-2 md:p-3 bg-emerald-100 rounded-xl shrink-0">
+                    <Move className="w-5 h-5 md:w-6 md:h-6 text-emerald-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-slate-500 text-xs font-medium mb-0.5 truncate">Catheter Dist. (6550)</p>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-slate-800 font-bold text-lg md:text-2xl">
+                        {catheterDistance === '--' ? '--' : `${catheterDistance}`}
+                      </span>
+                      <span className="text-slate-400 text-xs">mm</span>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
           </div>
+          {/* end left column */}
 
-          {/* Control Panel */}
-          {/* <div className="space-y-6"> */}
-          {/* <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-4 md:gap-6"> */}
-          {/* Control Panel */}
-          <div className="grid grid-cols-2 gap-4 md:gap-6">
-            {/* Row 1: Clamp Control and Heater Control side by side */}
-            {/* Clamp Control */}
-            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
-              <h3 className="text-lg font-semibold text-slate-800 mb-4">Clamp Control</h3>
-              <p className="text-sm text-slate-500 mb-4">Press to toggle clamp ON/OFF</p>
-              <div className="flex justify-center">
-                <button
-                  onClick={handleClampToggle}
-                  disabled={!connectionStatus.connected || controls.homing}
-                  className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 transition-all duration-300 shadow-lg hover:shadow-xl ${!connectionStatus.connected || controls.homing
-                      ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                      : controls.clamp
-                        ? 'bg-purple-500 border-purple-600 text-white hover:bg-purple-600'
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                    }`}
-                >
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    {/* <Zap className="w-6 h-6 sm:w-8 sm:h-8" /> */}
+          {/* ══════════ RIGHT: [Probe | Clamp] + Catheter ══════════ */}
+          <div className="flex flex-col gap-4 md:gap-6 w-full">
+
+            {/* Top row: Probe + Clamp side by side */}
+            <div className="flex gap-4 md:gap-6">
+
+              {/* Probe card */}
+              <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6 flex-1 min-w-0">
+                <h3 className="text-base font-semibold text-slate-800 mb-1 text-center">Probe</h3>
+                <p className="text-[10px] text-slate-400 italic mb-4 text-center">
+                  Status Indicators
+                </p>
+
+                <div className="flex flex-col items-center gap-5">
+
+                  {/* Probe Up - M4 */}
+                  <div className="flex flex-col items-center gap-2">
+                    <div
+                      className={circleClass(probeUp, 'bg-red-500 border-red-600')}
+                    >
+                      <ChevronUp className="w-7 h-7 sm:w-8 sm:h-8" />
+                      {probeUp && (
+                        <div className="absolute -inset-1 bg-red-500 rounded-full animate-ping opacity-30 pointer-events-none" />
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-slate-600">Probe Up (M4)</span>
+                  </div>
+
+                  <div className="w-full border-t border-slate-100" />
+
+                  {/* Probe Down - M5 */}
+                  <div className="flex flex-col items-center gap-2">
+                    <div
+                      className={circleClass(probeDown, 'bg-blue-500 border-blue-600')}
+                    >
+                      <ChevronDown className="w-7 h-7 sm:w-8 sm:h-8" />
+                      {probeDown && (
+                        <div className="absolute -inset-1 bg-blue-500 rounded-full animate-ping opacity-30 pointer-events-none" />
+                      )}
+                    </div>
+                    <span className="text-xs font-medium text-slate-600">Probe Down (M5)</span>
+                  </div>
+
+                </div>
+              </div>
+              {/* end Probe card */}
+
+              {/* Clamp card */}
+              <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6 flex-1 min-w-0">
+                <h3 className="text-base font-semibold text-slate-800 mb-1 text-center">Clamp</h3>
+                <p className="text-[10px] text-slate-400 italic mb-4 text-center">Coil 2003 (M3)</p>
+
+                <div className="flex justify-center">
+                  <div
+                    className={circleClass(clamp, 'bg-purple-500 border-purple-600')}
+                  >
                     <img
                       src={clampIcon}
                       alt="Clamp"
-                      className="w-6 h-6 sm:w-8 sm:h-8 object-contain"
+                      className="w-8 h-8 sm:w-10 sm:h-10 object-contain"
+                      style={{ filter: clamp ? 'brightness(0) invert(1)' : 'none' }}
                     />
+                    {clamp && (
+                      <div className="absolute -inset-1 bg-purple-500 rounded-full animate-ping opacity-30 pointer-events-none" />
+                    )}
                   </div>
-                  {controls.clamp && connectionStatus.connected && (
-                    <div className="absolute -inset-1 bg-purple-500 rounded-full animate-ping opacity-30"></div>
-                  )}
-                </button>
-              </div>
-              <div className="mt-4 text-center">
-                <span className={`text-sm font-semibold ${controls.clamp ? 'text-purple-600' : 'text-slate-600'}`}>
-                  {controls.clamp ? 'CLAMPED' : 'UNCLAMPED'}
-                </span>
-              </div>
-            </div>
-
-            {/* Heater Control */}
-            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
-              <h3 className="text-lg font-semibold text-slate-800 mb-4">Heater Control</h3>
-              <p className="text-sm text-slate-500 mb-4">Press to toggle ON/OFF</p>
-              <div className="flex justify-center">
-                <button
-                  onClick={handleHeaterToggle}
-                  disabled={!connectionStatus.connected || controls.homing}
-                  className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 transition-all duration-300 shadow-lg hover:shadow-xl ${!connectionStatus.connected || controls.homing
-                      ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                      : controls.heater
-                        ? 'bg-orange-500 border-orange-600 text-white hover:bg-orange-600'
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                    }`}
-                >
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Flame className="w-6 h-6 sm:w-8 sm:h-8" />
-                  </div>
-                  {controls.heater && connectionStatus.connected && (
-                    <div className="absolute -inset-1 bg-orange-500 rounded-full animate-ping opacity-30"></div>
-                  )}
-                </button>
-              </div>
-              <div className="mt-4 text-center">
-                <span className={`text-sm font-semibold ${controls.heater ? 'text-orange-600' : 'text-slate-600'}`}>
-                  {controls.heater ? 'HEATING' : 'OFF'}
-                </span>
-              </div>
-            </div>
-
-            {/* Row 2: Movement Control full width */}
-            <div className="col-span-2 bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
-              <h3 className="text-lg font-semibold text-slate-800 mb-4">Movement Control</h3>
-              <p className="text-sm text-slate-500 mb-4">Control catheter movement</p>
-
-              <div className="flex justify-center space-x-6 md:space-x-8">
-                {/* Retraction (Backward) Button - Left Arrow */}
-                <button
-                  onClick={handleRetraction}
-                  disabled={isRetractionDisabled}
-                  className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-full border-4 transition-all duration-300 shadow-lg hover:shadow-xl ${isRetractionDisabled
-                      ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                      : controls.retraction
-                        ? 'bg-blue-500 border-blue-600 text-white hover:bg-blue-600'
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-blue-400 hover:bg-blue-50'
-                    }`}
-                >
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <ChevronLeft className="w-6 h-6 sm:w-8 sm:h-8" />
-                  </div>
-                  {controls.retraction && connectionStatus.connected && (
-                    <div className="absolute -inset-1 bg-blue-500 rounded-full animate-ping opacity-30"></div>
-                  )}
-                </button>
-
-                {/* Insertion (Forward) Button - Right Arrow */}
-                <button
-                  onClick={handleInsertion}
-                  disabled={isInsertionDisabled}
-                  className={`relative w-16 h-16 sm:w-20 sm:h-20 rounded-full border-4 transition-all duration-300 shadow-lg hover:shadow-xl ${isInsertionDisabled
-                      ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                      : controls.insertion
-                        ? 'bg-blue-500 border-blue-600 text-white hover:bg-blue-600'
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-blue-400 hover:bg-blue-50'
-                    }`}
-                >
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <ChevronRight className="w-6 h-6 sm:w-8 sm:h-8" />
-                  </div>
-                  {controls.insertion && connectionStatus.connected && (
-                    <div className="absolute -inset-1 bg-red-500 rounded-full animate-ping opacity-30"></div>
-                  )}
-                </button>
-              </div>
-
-              <div className="mt-6 text-center">
-                <div className="text-sm font-semibold">
-                  {controls.insertion && (
-                    <span className="text-blue-600">INSERTING FORWARD (Press again to stop)</span>
-                  )}
-                  {controls.retraction && (
-                    <span className="text-blue-600">RETRACTING BACKWARD (Press again to stop)</span>
-                  )}
-                  {!controls.insertion && !controls.retraction && (
-                    <span className="text-slate-600">STATIONARY</span>
-                  )}
                 </div>
-                {controls.insertion && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Retraction disabled while inserting
-                  </p>
-                )}
-                {controls.retraction && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    Insertion disabled while retracting
-                  </p>
-                )}
-                {isMovementDisabled && connectionStatus.connected && !controls.homing && (
-                  <p className="text-xs text-amber-600 mt-2">
-                    Complete homing first to enable movement
-                  </p>
-                )}
-                {controls.homing && (
-                  <p className="text-xs text-blue-600 mt-2">
-                    Homing in progress - movement disabled
-                  </p>
-                )}
-              </div>
-            </div>
 
-            {/* Row 3: Homing Control full width */}
-            <div className="col-span-2 bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
-              <h3 className="text-lg font-semibold text-slate-800 mb-4">Homing Control</h3>
-              <p className="text-sm text-slate-500 mb-4">Press to reset catheter position</p>
-              <div className="flex justify-center">
-                <button
-                  onClick={resetCatheter}
-                  disabled={isHomingButtonDisabled}
-                  className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 transition-all duration-300 shadow-lg hover:shadow-xl ${isHomingButtonDisabled
-                      ? 'bg-gray-100 border-gray-300 text-gray-400 cursor-not-allowed'
-                      : controls.homing
-                        ? 'bg-blue-500 border-blue-600 text-white'
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                    }`}
-                >
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <RotateCw className={`w-6 h-6 sm:w-8 sm:h-8 ${controls.homing ? 'animate-spin' : ''}`} />
-                  </div>
-                  {controls.homing && connectionStatus.connected && (
-                    <div className="absolute -inset-1 bg-blue-500 rounded-full animate-ping opacity-30"></div>
-                  )}
-                </button>
+                <div className="mt-4 flex justify-center">
+                  {statusBadge(clamp, 'bg-purple-100 text-purple-700', 'bg-slate-100 text-slate-500', 'CLAMPED', 'UNCLAMPED')}
+                </div>
               </div>
-              <div className="mt-4 text-center">
-                <span className={`text-sm font-semibold ${controls.homing ? 'text-blue-600' : 'text-slate-600'}`}>
-                  {controls.homing ? 'HOMING ACTIVE' : coilLLSStatus ? 'AT HOME' : 'READY'}
-                </span>
+              {/* end Clamp card */}
+
+            </div>
+            {/* end top row */}
+
+            {/* Catheter card — full width below */}
+            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
+              <h3 className="text-base font-semibold text-slate-800 mb-1 text-center">Catheter</h3>
+              <p className="text-[10px] text-slate-400 italic mb-4 text-center">
+                Status Indicators
+              </p>
+
+              <div className="flex items-start justify-around gap-4">
+
+                {/* Catheter Forward - M7 */}
+                <div className="flex flex-col items-center gap-2">
+                  <div
+                    className={circleClass(catheterForward, 'bg-green-500 border-green-600')}
+                  >
+                    <ChevronLeft className="w-7 h-7 sm:w-8 sm:h-8" />
+                    {catheterForward && (
+                      <div className="absolute -inset-1 bg-green-500 rounded-full animate-ping opacity-30 pointer-events-none" />
+                    )}
+                  </div>
+                  <span className="text-xs font-medium text-slate-600">Forward (M7)</span>
+                </div>
+
+                <div className="self-center w-px h-20 bg-slate-100" />
+
+                {/* Catheter Backward - M6 */}
+                <div className="flex flex-col items-center gap-2">
+                  <div
+                    className={circleClass(catheterBack, 'bg-amber-500 border-amber-600')}
+                  >
+                    <ChevronRight className="w-7 h-7 sm:w-8 sm:h-8" />
+                    {catheterBack && (
+                      <div className="absolute -inset-1 bg-amber-500 rounded-full animate-ping opacity-30 pointer-events-none" />
+                    )}
+                  </div>
+                  <span className="text-xs font-medium text-slate-600">Backward (M6)</span>
+                </div>
+
               </div>
             </div>
+            {/* end Catheter card */}
+
           </div>
+          {/* end right column */}
+
         </div>
+        {/* end main grid */}
+
+        {/* Controls disabled message */}
+        {(!controlsEnabled && connectionStatus.connected && !emergencyActive) && (
+          <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-center">
+            <p className="text-sm text-yellow-800">
+              Waiting for manual mode activation... Please ensure connection is stable.
+            </p>
+          </div>
+        )}
+
       </div>
     </div>
   );
