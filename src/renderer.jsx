@@ -16,6 +16,8 @@ import CreateTwoPointConfig from "./CreateTwoPointConfig.jsx";
 import CreateThreePointConfig from "./CreateThreePointConfig.jsx";
 import LoadTwoPointConfig from "./LoadTwoPointConfig.jsx";
 import LoadThreePointConfig from "./LoadThreePointConfig.jsx";
+import AppShell from "./AppShell.jsx";
+import DeletePointConfig from "./DeletePointConfig.jsx";
 
 import SafetyAlert from "./SafetyAlert.jsx";
 
@@ -39,60 +41,64 @@ const App = () => {
       <Routes>
       {/* Login page - NO SafetyAlert */}
         <Route path="/" element={<Login />} />
-        {/* Route for MainMenu with SafetyAlert */}
-        <Route
-          path="/main-menu"
-          element={
-            <>
-              {/* <SafetyAlert /> */}
-              <MainMenu />
-            </>
-          }
-        />
-        
-        {/* Route for LoadConfig (HandleConfig with mode="load") with SafetyAlert */}
-        <Route
-          path="/handle-config/load"
-          element={
-            <>
-              {/* <SafetyAlert /> */}
-              <HandleConfig mode="load" />
-            </>
-          }
-        />
-        
-        {/* Route for ManualMode with SafetyAlert */}
-        <Route
-          path="/manual-mode"
-          element={
-            <>
-              {/* <SafetyAlert /> */}
-              <Manual />
-            </>
-          }
-        />
-        
-        {/* Route for ProcessMode with SafetyAlert */}
-        <Route
-          path="/process-mode"
-          element={
-            <>
-              {/* <SafetyAlert /> */}
-              <ProcessMode />
-            </>
-          }
-        />
-        
-        {/* Routes without SafetyAlert */}
-        <Route path="/create-config" element={<CreateConfig />} />
-        <Route path="/handle-config/delete" element={<HandleConfig mode="delete" />} />
-        <Route path="/process-logs" element={<ProcessLogs />} />
-        <Route path="/test-selection" element={<TestSelection />} />
-        <Route path="/test-action/:testType" element={<TestActionSelection />} />
-        <Route path="/create-config/2-point" element={<CreateTwoPointConfig />} />
-        <Route path="/create-config/3-point" element={<CreateThreePointConfig />} />
-        <Route path="/load-config/2-point" element={<LoadTwoPointConfig />} />
-        <Route path="/load-config/3-point" element={<LoadThreePointConfig />} />
+
+        <Route element={<AppShell />}>
+          {/* Route for MainMenu with SafetyAlert */}
+          <Route
+            path="/main-menu"
+            element={
+              <>
+                {/* <SafetyAlert /> */}
+                <MainMenu />
+              </>
+            }
+          />
+
+          {/* Route for LoadConfig (HandleConfig with mode="load") with SafetyAlert */}
+          <Route
+            path="/handle-config/load"
+            element={
+              <>
+                {/* <SafetyAlert /> */}
+                <HandleConfig mode="load" />
+              </>
+            }
+          />
+
+          {/* Route for ManualMode with SafetyAlert */}
+          <Route
+            path="/manual-mode"
+            element={
+              <>
+                {/* <SafetyAlert /> */}
+                <Manual />
+              </>
+            }
+          />
+
+          {/* Route for ProcessMode with SafetyAlert */}
+          <Route
+            path="/process-mode"
+            element={
+              <>
+                {/* <SafetyAlert /> */}
+                <ProcessMode />
+              </>
+            }
+          />
+
+          {/* Routes without SafetyAlert */}
+          <Route path="/create-config" element={<CreateConfig />} />
+          <Route path="/handle-config/delete" element={<HandleConfig mode="delete" />} />
+          <Route path="/process-logs" element={<ProcessLogs />} />
+          <Route path="/test-selection" element={<TestSelection />} />
+          <Route path="/test-action/:testType" element={<TestActionSelection />} />
+          <Route path="/create-config/2-point" element={<CreateTwoPointConfig />} />
+          <Route path="/create-config/3-point" element={<CreateThreePointConfig />} />
+          <Route path="/load-config/2-point" element={<LoadTwoPointConfig />} />
+          <Route path="/load-config/3-point" element={<LoadThreePointConfig />} />
+          <Route path="/delete-config/:testType" element={<DeletePointConfig />} />
+        </Route>
       </Routes>
       <UpdateChecker />
     </HashRouter>

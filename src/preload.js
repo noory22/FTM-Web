@@ -9,6 +9,11 @@ contextBridge.exposeInMainWorld("api", {
   deleteConfigFile: (configName) => ipcRenderer.invoke("delete-config-file", configName),
   sendProcessMode: (config) => ipcRenderer.invoke("send-process-mode", config),
 
+  read2PointConfigs: () => ipcRenderer.invoke("read-2point-configs"),
+  write2PointConfigs: (configs) => ipcRenderer.invoke("write-2point-configs", configs),
+  read3PointConfigs: () => ipcRenderer.invoke("read-3point-configs"),
+  write3PointConfigs: (configs) => ipcRenderer.invoke("write-3point-configs", configs),
+
   // ============= COMMAND FUNCTIONS =============
   home: () => ipcRenderer.invoke("home"),
   start: () => ipcRenderer.invoke("start"),
@@ -23,6 +28,15 @@ contextBridge.exposeInMainWorld("api", {
   insertion: () => ipcRenderer.invoke("insertion"),
   ret: () => ipcRenderer.invoke("ret"),
   disableManualMode: () => ipcRenderer.invoke('disable-manual-mode'),
+  manualModeActivate: () => ipcRenderer.invoke("manual-mode-activate"),
+  manualModeDeactivate: () => ipcRenderer.invoke("manual-mode-deactivate"),
+  deactivateManual: () => ipcRenderer.invoke("deactivate-manual"),
+  clampControl: (state) => ipcRenderer.invoke("clamp-control", state),
+  catheterForward: () => ipcRenderer.invoke("catheter-forward"),
+  catheterBackward: () => ipcRenderer.invoke("catheter-backward"),
+  probeUp: () => ipcRenderer.invoke("probe-up"),
+  probeDown: () => ipcRenderer.invoke("probe-down"),
+  probeStop: () => ipcRenderer.invoke("probe-stop"),
   // ============= CSV LOGGING =============
   startCSV: (config) => ipcRenderer.invoke("csv-start", config),
   appendCSV: (payload) => ipcRenderer.invoke("csv-append", payload),

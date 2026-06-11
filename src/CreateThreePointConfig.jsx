@@ -92,6 +92,10 @@ const CreateThreePointConfig = () => {
     setIsLoading(true);
 
     try {
+      if (!window.api?.read3PointConfigs || !window.api?.write3PointConfigs) {
+        throw new Error('3-point config API is not available. Restart the app so the updated preload is loaded.');
+      }
+
       // Check for duplicate configuration names
       const existingConfigs = await window.api.read3PointConfigs();
 
@@ -119,12 +123,12 @@ const CreateThreePointConfig = () => {
           horizontalSpeed: ''
         });
       } else {
-        setErrors({ submit: 'Error saving configuration. Please try again.' });
+        setErrors({ submit: 'Error saving configuration. The CSV write returned false.' });
       }
 
     } catch (error) {
       console.error('Error saving configuration:', error);
-      setErrors({ submit: 'Error saving configuration. Please try again.' });
+      setErrors({ submit: error.message || 'Error saving configuration. Please try again.' });
     } finally {
       setIsLoading(false);
     }

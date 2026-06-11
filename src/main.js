@@ -937,6 +937,75 @@ async function writeConfigurations(configs) {
   }
 }
 
+// ============================
+// 2-POINT & 3-POINT CSV CONFIGURATIONS
+// ============================
+function convertToCSV(arr, headers) {
+  if (!arr || !arr.length) return headers.join(',') + '\n';
+
+  const csvRows = [headers.join(',')];
+  for (const row of arr) {
+    const values = headers.map((header) => {
+      const val = row[header];
+      const escaped = (`${val ?? ''}`).replace(/"/g, '""');
+      return `"${escaped}"`;
+    });
+    csvRows.push(values.join(','));
+  }
+
+  return csvRows.join('\n');
+}
+
+function convertFromCSV(csvStr, headers) {
+  if (!csvStr) return [];
+
+  const lines = csvStr.trim().split('\n');
+  if (lines.length <= 1) return [];
+
+  const result = [];
+  for (let i = 1; i < lines.length; i += 1) {
+    const line = lines[i].replace(/"/g, '');
+    const values = line.split(',');
+    const obj = {};
+
+    headers.forEach((header, index) => {
+      obj[header] = values[index] !== undefined ? values[index] : '';
+    });
+
+    result.push(obj);
+  }
+
+  return result;
+}
+
+const TWO_POINT_DIR = path.join(app.getPath('documents'), 'FTM-2-point Test');
+const TWO_POINT_FILE = path.join(TWO_POINT_DIR, 'configs.csv');
+const TWO_POINT_HEADERS = ['configName', 'probeTravelLimit', 'forceLimit', 'testSpeed'];
+
+async function ensure2PointConfig() {
+  if (!fs.existsSync(TWO_POINT_DIR)) {
+    fs.mkdirSync(TWO_POINT_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(TWO_POINT_FILE)) {
+    await fsPromises.writeFile(TWO_POINT_FILE, `${TWO_POINT_HEADERS.join(',')}\n`, 'utf8');
+  }
+}
+
+const THREE_POINT_DIR = path.join(app.getPath('documents'), 'FTM-3-point Test');
+const THREE_POINT_FILE = path.join(THREE_POINT_DIR, 'configs.csv');
+const THREE_POINT_HEADERS = ['configName', 'testLength', 'measurementInterval', 'probeTravelLimit', 'forceLimit', 'testSpeed', 'supportSpan', 'horizontalSpeed'];
+
+async function ensure3PointConfig() {
+  if (!fs.existsSync(THREE_POINT_DIR)) {
+    fs.mkdirSync(THREE_POINT_DIR, { recursive: true });
+  }
+
+  if (!fs.existsSync(THREE_POINT_FILE)) {
+    await fsPromises.writeFile(THREE_POINT_FILE, `${THREE_POINT_HEADERS.join(',')}\n`, 'utf8');
+  }
+}
+
 // -------------------------
 // Pulse coil helper
 // -------------------------
@@ -1300,6 +1369,53 @@ ipcMain.handle("delete-config-file", async (event, configName) => {
     return false;
   }
 });
+
+ipcMain.handle('read-2point-configs', async () => {
+  try {
+    await ensure2PointConfig();
+    const data = await fsPromises.readFile(TWO_POINT_FILE, 'utf8');
+    return convertFromCSV(data, TWO_POINT_HEADERS);
+  } catch (error) {
+    console.error('Error reading 2-point configs:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('write-2point-configs', async (event, configs) => {
+  try {
+    await ensure2PointConfig();
+    const csvData = convertToCSV(configs, TWO_POINT_HEADERS);
+    await fsPromises.writeFile(TWO_POINT_FILE, csvData, 'utf8');
+    return true;
+  } catch (error) {
+    console.error('Error writing 2-point configs:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('read-3point-configs', async () => {
+  try {
+    await ensure3PointConfig();
+    const data = await fsPromises.readFile(THREE_POINT_FILE, 'utf8');
+    return convertFromCSV(data, THREE_POINT_HEADERS);
+  } catch (error) {
+    console.error('Error reading 3-point configs:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('write-3point-configs', async (event, configs) => {
+  try {
+    await ensure3PointConfig();
+    const csvData = convertToCSV(configs, THREE_POINT_HEADERS);
+    await fsPromises.writeFile(THREE_POINT_FILE, csvData, 'utf8');
+    return true;
+  } catch (error) {
+    console.error('Error writing 3-point configs:', error);
+    return false;
+  }
+});
+
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 ipcMain.handle("send-process-mode", async (event, config) => {
   return await safeExecute("SEND_PROCESS_CONFIG", async () => {

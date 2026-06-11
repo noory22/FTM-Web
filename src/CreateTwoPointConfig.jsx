@@ -85,6 +85,10 @@ const CreateTwoPointConfig = () => {
     setIsLoading(true);
 
     try {
+      if (!window.api?.read2PointConfigs || !window.api?.write2PointConfigs) {
+        throw new Error('2-point config API is not available. Restart the app so the updated preload is loaded.');
+      }
+
       // Check for duplicate configuration names
       const existingConfigs = await window.api.read2PointConfigs();
 
@@ -109,12 +113,12 @@ const CreateTwoPointConfig = () => {
           testSpeed: ''
         });
       } else {
-        setErrors({ submit: 'Error saving configuration. Please try again.' });
+        setErrors({ submit: 'Error saving configuration. The CSV write returned false.' });
       }
 
     } catch (error) {
       console.error('Error saving configuration:', error);
-      setErrors({ submit: 'Error saving configuration. Please try again.' });
+      setErrors({ submit: error.message || 'Error saving configuration. Please try again.' });
     } finally {
       setIsLoading(false);
     }
