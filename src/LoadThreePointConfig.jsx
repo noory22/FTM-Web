@@ -37,12 +37,15 @@ const LoadThreePointConfig = () => {
     }
 
     try {
-      // Just mock for now or use the sendProcessMode if it works with these fields
-      const success = await window.api.sendProcessMode({
-        pathlength: selectedConfig.testLength,
-        thresholdForce: selectedConfig.forceLimit,
-        insertionLength: selectedConfig.probeTravelLimit,
-        retractionLength: 0 // Mocking to avoid undefined issues
+      // Call the 3-point config API with all required parameters
+      const success = await window.api.send3PointConfig({
+        testLength: selectedConfig.testLength,              // Maps to R4
+        measurementInterval: selectedConfig.measurementInterval, // Maps to R5
+        probeTravelLimit: selectedConfig.probeTravelLimit,  // Maps to R6
+        forceLimit: selectedConfig.forceLimit,              // Maps to R7
+        testSpeed: selectedConfig.testSpeed,                // Maps to R8
+        supportSpan: selectedConfig.supportSpan,            // Maps to R9
+        horizontalSpeed: selectedConfig.horizontalSpeed     // Maps to R10
       });
 
       if (!success) {
@@ -55,6 +58,7 @@ const LoadThreePointConfig = () => {
 
     } catch (error) {
       console.error("PLC transfer failed:", error);
+      alert("Failed to send configuration to PLC.");
     }
   };
 

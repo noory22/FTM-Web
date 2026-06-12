@@ -5,7 +5,7 @@ const { autoUpdater } = require("electron-updater");
 const ModbusRTU = require("modbus-serial");
 const { SerialPort } = require('serialport');
 const path = require("path");
-const iconPath = path.join(__dirname,'src/assets/icon.ico');
+const iconPath = path.join(__dirname, 'src/assets/icon.ico');
 const fs = require('fs');  // Changed from fs.promises to regular fs for sync operations
 const fsPromises = require('fs').promises;  // Keep for async operations
 
@@ -23,7 +23,6 @@ autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
 if (!isDev) {
-  // Setup auto-updater event handlers
   autoUpdater.on('checking-for-update', () => {
     console.log('Checking for updates...');
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -34,33 +33,30 @@ if (!isDev) {
   autoUpdater.on('update-available', (info) => {
     console.log('Update available:', info);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', `Update available: v${info.version}`);
-      
-      dialog.showMessageBox(mainWindow, {
-        type: 'info',
-        title: 'Update Available',
-        message: `A new version ${info.version} is available. Do you want to download it now?`,
-        buttons: ['Yes', 'No'],
-        defaultId: 0,
-        cancelId: 1
-      }).then((result) => {
-        if (result.response === 0) {
-          autoUpdater.downloadUpdate();
-        }
-      });
+      // Send to UI component
+      mainWindow.webContents.send('update-status', 'Update available');
+      mainWindow.webContents.send('update-available', info);
+
+      // Also show a system dialog as backup
+      // dialog.showMessageBox(mainWindow, {
+      //   type: 'info',
+      //   title: 'Update Available',
+      //   message: `A new version ${info.version} is available. Do you want to download it now?`,
+      //   buttons: ['Yes', 'No'],
+      //   defaultId: 0,
+      //   cancelId: 1
+      // }).then((result) => {
+      //   if (result.response === 0) {
+      //     autoUpdater.downloadUpdate();
+      //   }
+      // });
     }
   });
 
   autoUpdater.on('update-not-available', () => {
     console.log('No updates available');
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', 'No updates available');
-      dialog.showMessageBox(mainWindow, {
-        type: 'info',
-        title: 'No Updates',
-        message: 'You are running the latest version.',
-        buttons: ['OK']
-      });
+      mainWindow.webContents.send('update-status', 'latest');
     }
   });
 
@@ -68,11 +64,11 @@ if (!isDev) {
     console.error('Update error:', err);
     if (mainWindow && !mainWindow.isDestroyed()) {
       const errMsg = err.message || err.toString() || '';
-      const isNotFoundError = errMsg.includes('404') || 
-                            errMsg.toLowerCase().includes('not found') || 
-                            errMsg.includes('No published versions') ||
-                            errMsg.includes('latest.yml');
-                            
+      const isNotFoundError = errMsg.includes('404') ||
+        errMsg.toLowerCase().includes('not found') ||
+        errMsg.includes('No published versions') ||
+        errMsg.includes('latest.yml');
+
       if (isNotFoundError) {
         console.log('No updates found (404/no releases). Treating as up-to-date.');
         mainWindow.webContents.send('update-status', 'latest');
@@ -83,8 +79,7 @@ if (!isDev) {
   });
 
   autoUpdater.on('download-progress', (progressObj) => {
-    let logMessage = `Downloaded ${progressObj.percent.toFixed(2)}%`;
-    console.log(logMessage);
+    console.log(`Download progress: ${progressObj.percent}%`);
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('update-progress', progressObj);
     }
@@ -93,19 +88,19 @@ if (!isDev) {
   autoUpdater.on('update-downloaded', (info) => {
     console.log('Update downloaded:', info);
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('update-status', 'Update downloaded. Ready to install.');
-      
-      dialog.showMessageBox(mainWindow, {
-        type: 'info',
-        title: 'Update Ready',
-        message: `Version ${info.version} has been downloaded. The application will restart to install the update.`,
-        buttons: ['Restart Now'],
-        defaultId: 0
-      }).then(() => {
-        setImmediate(() => {
-          autoUpdater.quitAndInstall();
-        });
-      });
+      mainWindow.webContents.send('update-status', 'downloaded');
+
+      // dialog.showMessageBox(mainWindow, {
+      //   type: 'info',
+      //   title: 'Update Ready',
+      //   message: `Version ${info.version} has been downloaded. The application will restart to install the update.`,
+      //   buttons: ['Restart Now'],
+      //   defaultId: 0
+      // }).then(() => {
+      //   setImmediate(() => {
+      //     autoUpdater.quitAndInstall();
+      //   });
+      // });
     }
   });
 }
@@ -119,44 +114,63 @@ let csvFilePath = null;
 // Modbus / PLC settings - UPDATED BASED ON PYTHON CODE
 // -------------------------
 let PORT = null; // Auto-detected
-const BAUDRATE = 9600;
+const BAUDRATE = 115200;
 const TIMEOUT = 0; // Using buffered read, timeout not as critical in this config
 
 const COIL_POW = 1003
 const COIL_EMER = 1004
-const COIL_HOME = 2001;
-const COIL_LLS = 1000;
-const COIL_START = 2002;
-const COIL_STOP = 2003;
-const COIL_RESET = 2004;
-const COIL_HEATING = 2012;
-const COIL_HEATER = 2005;
-const COIL_RETRACTION = 2006;
-const COIL_MANUAL = 2070;
-const COIL_INSERTION = 2008;
-const COIL_RET = 2009;
-const COIL_CLAMP = 2007;
+const COIL_LLS = 3922; // Modbus address for M1922 (2000 + 1922)
 
-const REG_DISTANCE = 70;  // 1 register (16-bit integer)
-const REG_FORCE = 54;  // 2 registers (32-bit float)
-const REG_TEMP = 501; // 1 register (16-bit integer)
-const REG_MANUAL_DISTANCE = 6550; // 1 register (16-bit integer)
+// Manual Mode Coils
+const COIL_MANUAL = 2001;          // M1
+const COIL_MANUAL_EXIT = 2002;     // M2
+const COIL_CLAMP = 2003;           // M3
+const COIL_PROBE_UP = 2004;        // M4
+const COIL_PROBE_DOWN = 2005;      // M5
+const COIL_CATHETER_BACK = 2006;   // M6
+const COIL_CATHETER_FORWARD = 2007; // M7
+
+const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe Distance
+const REG_FORCE = 54;     // 2 registers (32-bit float)  — Force
+const REG_MANUAL_DISTANCE = 71;   // 1 register (16-bit integer) — Catheter Distance (R71)
+
+// -------------------------
+// Helper: Convert two 16-bit Modbus registers → 32-bit float (Little-Endian word order)
+// Most Delta PLCs send floats as: word[0] = low word, word[1] = high word
+// -------------------------
+function registersToFloat32LE(lowWord, highWord) {
+  const buf = new ArrayBuffer(4);
+  const view = new DataView(buf);
+  view.setUint16(0, lowWord, true); // low word at byte 0
+  view.setUint16(2, highWord, true); // high word at byte 2
+  return view.getFloat32(0, true);   // read as little-endian float
+}
+
+// Alternative: Big-Endian word order (try this if LE gives wrong result)
+function registersToFloat32BE(highWord, lowWord) {
+  const buf = new ArrayBuffer(4);
+  const view = new DataView(buf);
+  view.setUint16(0, highWord, false);
+  view.setUint16(2, lowWord, false);
+  return view.getFloat32(0, false);
+}
 
 // Global State
 let isConnected = false;
+let lastPulseTime = Date.now();
 const client = new ModbusRTU();
 
 // PLC Cache & Command Queue
 let plcState = {
-  distance: 0,
-  force_mN: 0,
-  temperature: 0,
-  manualDistance: 0,
+  distance: 0,        // R70  — Probe Distance (mm)
+  force_mN: 0,        // R54  — Force (mN, 32-bit float)
+  catheterDistance: 0,// 6550 — Catheter Distance (mm)
   coilLLS: false,
   clamp: false,
-  heater: false,
-  insertion: false,
-  retraction: false,
+  probeUp: false,
+  probeDown: false,
+  catheterBack: false,
+  catheterForward: false,
   lastUpdated: 0
 };
 
@@ -169,9 +183,44 @@ let isLoopRunning = false;
 // ============================
 const CONFIG_FILE_PATH = path.join(app.getPath('documents'), 'CTTM.json');
 
+// -------------------------
+// Helper: Verify Heartbeat Pulses on COIL_LLS - NEW
+// -------------------------
+async function verifyPulses(clientInstance) {
+  let pulseCount = 0;
+  let lastVal = null;
+  const pollInterval = 100; // ms
+  const maxWaitTime = 10000; // 10 seconds timeout
+  const startTime = Date.now();
+
+  console.log("🔍 Verifying 3 continuous pulses (0 -> 1 transitions) on COIL_LLS (1922)...");
+
+  while (Date.now() - startTime < maxWaitTime) {
+    const res = await clientInstance.readCoils(COIL_LLS, 1);
+    const val = res.data[0] ? 1 : 0;
+
+    if (lastVal !== null) {
+      if (lastVal === 0 && val === 1) {
+        pulseCount++;
+        console.log(`📡 Pulse ${pulseCount} detected (0 -> 1)`);
+      }
+    }
+    lastVal = val;
+
+    if (pulseCount >= 3) {
+      console.log("✅ Successfully verified 3 pulses. Connection confirmed.");
+      return true;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  console.log(`❌ Failed to detect 3 pulses within ${maxWaitTime}ms. Found ${pulseCount} pulses.`);
+  return false;
+}
 
 // -------------------------
-// Connect Modbus - UPDATED
+// Connect Modbus - UPDATED WITH PULSE VERIFICATION
 // -------------------------
 async function connectModbus(targetPort) {
   try {
@@ -191,9 +240,17 @@ async function connectModbus(targetPort) {
 
     client.setID(1);
     client.setTimeout(200); // 200ms timeout for faster disconnection detection
+
+    // Verify pulses before declaring connected
+    const verified = await verifyPulses(client);
+    if (!verified) {
+      throw new Error("Could not verify 3 pulses on COIL_LLS");
+    }
+
     isConnected = true;
+    lastPulseTime = Date.now(); // Reset pulse timer on successful connection
     PORT = targetPort; // Update global
-    console.log("✅ Modbus connected on", PORT);
+    console.log("✅ Modbus connected and pulse verified on", PORT);
 
     // Update UI to show connection status
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -202,7 +259,11 @@ async function connectModbus(targetPort) {
 
     return true;
   } catch (err) {
+    console.warn(`❌ Connection/verification failed on ${targetPort}:`, err.message);
     isConnected = false;
+    try {
+      if (client.isOpen) client.close();
+    } catch (e) { }
     return false;
   }
 }
@@ -227,16 +288,8 @@ async function findAndConnectPort() {
 
       const success = await connectModbus(portPath);
       if (success) {
-        // Try to read a coil to verify responsiveness
-        try {
-          await client.readCoils(COIL_LLS, 1);
-          console.log(`✅ Verified Modbus device on ${portPath}`);
-          return true;
-        } catch (readErr) {
-          console.warn(`⚠️ Connected to ${portPath} but read failed. Next...`);
-          isConnected = false;
-          client.close();
-        }
+        console.log(`✅ Verified Modbus device on ${portPath}`);
+        return true;
       }
     }
 
@@ -258,15 +311,8 @@ async function autoConnectPort() {
 
     // 1. Try last known PORT first if exists
     if (PORT && await connectModbus(PORT)) {
-      try {
-        await client.readCoils(COIL_LLS, 1);
-        console.log(`✅ Quick re-connect successful on ${PORT}`);
-        return true;
-      } catch (e) {
-        console.log(`⚠️ Quick connect failed verify. Scanning all...`);
-        isConnected = false;
-        client.close();
-      }
+      console.log(`✅ Quick re-connect successful on ${PORT}`);
+      return true;
     }
 
     // 2. Scan all
@@ -315,39 +361,28 @@ let isHardwareStopActive = false;
 // -------------------------
 // Helper: Perform Safety Stop
 // -------------------------
-async function performSafetyStop(reason) {
-  console.log(`⚠️ SAFETY STOP TRIGGERED: ${reason}`);
+// async function performSafetyStop(reason) {
+//   console.log(`⚠️ SAFETY STOP TRIGGERED: ${reason}. Clearing queue! Previous queue size: ${commandQueue.length}`);
 
-  // 1. Update internal states to STOP all movements/heaters
-  coilState.retraction = false;
-  coilState.heater = false;
-  coilState.manualRet = false;
-  coilState.heating = false;
-  insertionState = false;
-  retState = false;
+//   // Clear command queue to prevent pending actions
+//   commandQueue.length = 0;
 
-  // 2. Clear command queue to prevent pending actions
-  commandQueue.length = 0;
-
-  // 3. Directly write STOP coil to PLC (bypassing queue for safety)
-  if (!isHardwareStopActive) {
-    isHardwareStopActive = true;
-    try {
-      if (client.isOpen) {
-        await client.writeCoil(COIL_STOP, true);
-        await client.writeCoil(COIL_START, false);
-        await client.writeCoil(COIL_HEATER, false);
-        await client.writeCoil(COIL_HEATING, false);
-        await client.writeCoil(COIL_INSERTION, false);
-        await client.writeCoil(COIL_RET, false);
-        console.log("🛑 Global Stop coils written to PLC (Hardware Stop Active)");
-      }
-    } catch (err) {
-      console.error("❌ Failed to write safety stop coils:", err.message);
-      isHardwareStopActive = false; // Allow retry on next loop
-    }
-  }
-}
+//   // Directly write to PLC to deactivate manual mode
+//   if (!isHardwareStopActive) {
+//     isHardwareStopActive = true;
+//     try {
+//       if (client.isOpen) {
+//         console.log(`🔌 Safety Stop: Writing COIL_MANUAL(false) and COIL_MANUAL_EXIT(true)`);
+//         await client.writeCoil(COIL_MANUAL, false);
+//         await client.writeCoil(COIL_MANUAL_EXIT, true);
+//         console.log("🛑 Manual Mode Deactivated on PLC (Safety Stop Active)");
+//       }
+//     } catch (err) {
+//       console.error("❌ Failed to write safety stop coils:", err.message);
+//       isHardwareStopActive = false; // Allow retry on next loop
+//     }
+//   }
+// }
 
 
 
@@ -593,10 +628,8 @@ async function deleteLogFile(filePath) {
 // Create Window - Updated for electron-builder
 // ============================
 function createWindow() {
-  const preloadPath = isDev 
-    ? path.join(__dirname, 'preload.js') 
-    : path.join(__dirname, '.vite/build/preload/preload.js');
-    
+  const preloadPath = path.join(__dirname, 'preload.js');
+
   console.log('Preload path:', preloadPath);
   console.log('Preload file exists:', fs.existsSync(preloadPath));
 
@@ -698,11 +731,13 @@ async function processModbusLoop() {
       // 2. Process High Priority Commands FIRST
       if (commandQueue.length > 0) {
         const cmd = commandQueue.shift();
+        console.log(`🚀 Loop: Executing command from queue: ${cmd.commandName} (remaining: ${commandQueue.length})`);
         try {
           const result = await cmd.task();
+          console.log(`✅ Loop: Command ${cmd.commandName} execution success!`);
           cmd.resolve(result);
         } catch (e) {
-          console.error(`❌ Command ${cmd.commandName} failed:`, e.message);
+          console.error(`❌ Loop: Command ${cmd.commandName} failed:`, e.message);
           cmd.reject(e);
         }
         continue;
@@ -720,23 +755,22 @@ async function processModbusLoop() {
         plcState.coilLLS = currentLLSState;
         cycleSuccess = true;
         if (currentLLSState !== lastLLSState) {
-          if (currentLLSState) retState = false;
           if (mainWindow && !mainWindow.isDestroyed()) {
             mainWindow.webContents.send('lls-status', currentLLSState.toString());
           }
           lastLLSState = currentLLSState;
+          lastPulseTime = Date.now(); // Update pulse timer on transition
         }
       } catch (e) { }
- 
-      // Read Control Coils (Feedback Loop)
+
+      // Read Control Coils (Feedback Loop M3-M7)
       try {
-        const ctrlRes = await client.readCoils(COIL_CLAMP, 3);
-        plcState.clamp = Boolean(ctrlRes.data[0]);     // 2007
-        plcState.insertion = Boolean(ctrlRes.data[1]); // 2008
-        plcState.retraction = Boolean(ctrlRes.data[2]);// 2009
- 
-        const heatingRes = await client.readCoils(COIL_HEATING, 1);
-        plcState.heater = Boolean(heatingRes.data[0]); // 2012
+        const ctrlRes = await client.readCoils(COIL_CLAMP, 5);
+        plcState.clamp = Boolean(ctrlRes.data[0]);           // M3
+        plcState.probeUp = Boolean(ctrlRes.data[1]);         // M4
+        plcState.probeDown = Boolean(ctrlRes.data[2]);       // M5
+        plcState.catheterBack = Boolean(ctrlRes.data[3]);    // M6
+        plcState.catheterForward = Boolean(ctrlRes.data[4]); // M7
       } catch (e) { }
 
       // Read Safety Coils
@@ -754,8 +788,12 @@ async function processModbusLoop() {
 
       // Global Safety Check
       if (currentEmerState || !currentPowState) {
+        console.log(`🚨 Loop Safety Active: emer=${currentEmerState}, pow=${currentPowState} (currentPowState is !Boolean(COIL_POW) = !${!currentPowState}). isHardwareStopActive=${isHardwareStopActive}`);
         await performSafetyStop(currentEmerState ? "Emergency Pressed" : "Power OFF");
       } else {
+        if (isHardwareStopActive) {
+          console.log(`✅ Loop Safety Cleared: emer=${currentEmerState}, pow=${currentPowState}`);
+        }
         isHardwareStopActive = false;
       }
 
@@ -782,21 +820,49 @@ async function processModbusLoop() {
 
       try {
         const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
-        plcState.force_mN = registersToFloat32LE(fRes.data[0], fRes.data[1]);
+        const rawLow = fRes.data[0];
+        const rawHigh = fRes.data[1];
+        // Try both: plain 16-bit int (rawLow) and 32-bit float interpretations
+        const asInt16 = rawLow;                              // raw as plain integer
+        const asScaled = rawLow / 10.0;                      // common: value * 0.1
+        const floatLE = registersToFloat32LE(rawLow, rawHigh);
+        const floatBE = registersToFloat32BE(rawLow, rawHigh);
+        // Log every 5s
+        if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
+          console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}]`);
+          console.log(`   → as Int16:  ${asInt16} mN`);
+          console.log(`   → as /10:    ${asScaled} mN`);
+          console.log(`   → as LE f32: ${isFinite(floatLE) ? floatLE.toFixed(3) : 'NaN'} mN`);
+          console.log(`   → as BE f32: ${isFinite(floatBE) ? floatBE.toFixed(3) : 'NaN'} mN`);
+          plcState._forceLogTime = Date.now();
+        }
+        // Use raw Int16 as default — change to asScaled or floatLE if the value looks wrong
+        plcState.force_mN = isFinite(asInt16) ? asInt16 : 0;
         cycleSuccess = true;
-      } catch (e) { }
-
-      try {
-        const tRes = await client.readHoldingRegisters(REG_TEMP, 1);
-        plcState.temperature = tRes.data[0] / 10.0;
-        cycleSuccess = true;
-      } catch (e) { }
+      } catch (e) {
+        console.error('❌ REG_FORCE read error:', e.message);
+      }
 
       try {
         const mdRes = await client.readHoldingRegisters(REG_MANUAL_DISTANCE, 1);
-        plcState.manualDistance = new Int16Array(new Uint16Array([mdRes.data[0]]).buffer)[0];
+        const rawCath = mdRes.data[0];
+        // Store as-is (plain integer, no conversion)
+        plcState.catheterDistance = rawCath;
+        if (Date.now() - (plcState._cathLogTime || 0) > 5000) {
+          console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} mm`);
+          plcState._cathLogTime = Date.now();
+        }
         cycleSuccess = true;
-      } catch (e) { }
+      } catch (e) {
+        console.error('❌ REG_CATHETER(R71) read error:', e.message);
+      }
+
+      // Heartbeat pulse check: if pulse has stopped, trigger disconnection
+      const HEARTBEAT_TIMEOUT = 4000; // 4 seconds timeout
+      if (isConnected && (Date.now() - lastPulseTime > HEARTBEAT_TIMEOUT)) {
+        console.warn(`❌ PLC heartbeat stopped (no transition detected on COIL_LLS for ${Date.now() - lastPulseTime}ms).`);
+        cycleSuccess = false;
+      }
 
       // 4. Connection Success/Failure Tracking
       if (cycleSuccess) {
@@ -847,25 +913,27 @@ async function readPLCData() {
   // Return cached state immediately
   return {
     success: true,
+
+    // Probe Distance — R70
     distance: plcState.distance,
     distanceDisplay: `${plcState.distance} mm`,
 
+    // Force — R54 (32-bit float)
     force_mN: plcState.force_mN,
-    forceDisplay: `${plcState.force_mN} mN`,
+    forceDisplay: `${plcState.force_mN.toFixed(2)} mN`,
 
-    temperature: plcState.temperature,
-    temperatureDisplay: `${plcState.temperature.toFixed(1)} °C`,
+    // Catheter Distance — 6550
+    catheterDistance: plcState.catheterDistance,
+    catheterDistanceDisplay: `${plcState.catheterDistance} mm`,
 
-    manualDistance: plcState.manualDistance,
-    manualDistanceDisplay: `${plcState.manualDistance} mm`,
-
+    // Coil states
     coilLLS: plcState.coilLLS,
     clamp: plcState.clamp,
-    heater: plcState.heater,
-    insertion: plcState.insertion,
-    retraction: plcState.retraction,
+    probeUp: plcState.probeUp,
+    probeDown: plcState.probeDown,
+    catheterBack: plcState.catheterBack,
+    catheterForward: plcState.catheterForward,
 
-    // Raw data stub for compatibility if needed
     rawRegisters: {}
   };
 }
@@ -940,41 +1008,40 @@ async function writeConfigurations(configs) {
 // ============================
 // 2-POINT & 3-POINT CSV CONFIGURATIONS
 // ============================
+
+// Helper to convert array of objects to CSV string
 function convertToCSV(arr, headers) {
   if (!arr || !arr.length) return headers.join(',') + '\n';
-
-  const csvRows = [headers.join(',')];
+  const csvRows = [];
+  csvRows.push(headers.join(','));
   for (const row of arr) {
-    const values = headers.map((header) => {
+    const values = headers.map(header => {
       const val = row[header];
-      const escaped = (`${val ?? ''}`).replace(/"/g, '""');
+      const escaped = ('' + val).replace(/"/g, '""');
       return `"${escaped}"`;
     });
     csvRows.push(values.join(','));
   }
-
   return csvRows.join('\n');
 }
 
+// Helper to convert CSV string to array of objects
 function convertFromCSV(csvStr, headers) {
   if (!csvStr) return [];
-
   const lines = csvStr.trim().split('\n');
   if (lines.length <= 1) return [];
 
   const result = [];
-  for (let i = 1; i < lines.length; i += 1) {
+  for (let i = 1; i < lines.length; i++) {
+    // Simple split for CSV parsing (assumes no commas in values since we validate inputs)
     const line = lines[i].replace(/"/g, '');
     const values = line.split(',');
     const obj = {};
-
     headers.forEach((header, index) => {
       obj[header] = values[index] !== undefined ? values[index] : '';
     });
-
     result.push(obj);
   }
-
   return result;
 }
 
@@ -986,9 +1053,8 @@ async function ensure2PointConfig() {
   if (!fs.existsSync(TWO_POINT_DIR)) {
     fs.mkdirSync(TWO_POINT_DIR, { recursive: true });
   }
-
   if (!fs.existsSync(TWO_POINT_FILE)) {
-    await fsPromises.writeFile(TWO_POINT_FILE, `${TWO_POINT_HEADERS.join(',')}\n`, 'utf8');
+    await fsPromises.writeFile(TWO_POINT_FILE, TWO_POINT_HEADERS.join(',') + '\n', 'utf8');
   }
 }
 
@@ -1000,11 +1066,56 @@ async function ensure3PointConfig() {
   if (!fs.existsSync(THREE_POINT_DIR)) {
     fs.mkdirSync(THREE_POINT_DIR, { recursive: true });
   }
-
   if (!fs.existsSync(THREE_POINT_FILE)) {
-    await fsPromises.writeFile(THREE_POINT_FILE, `${THREE_POINT_HEADERS.join(',')}\n`, 'utf8');
+    await fsPromises.writeFile(THREE_POINT_FILE, THREE_POINT_HEADERS.join(',') + '\n', 'utf8');
   }
 }
+
+ipcMain.handle('read-2point-configs', async () => {
+  try {
+    await ensure2PointConfig();
+    const data = await fsPromises.readFile(TWO_POINT_FILE, 'utf8');
+    return convertFromCSV(data, TWO_POINT_HEADERS);
+  } catch (error) {
+    console.error('Error reading 2-point configs:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('write-2point-configs', async (event, configs) => {
+  try {
+    await ensure2PointConfig();
+    const csvData = convertToCSV(configs, TWO_POINT_HEADERS);
+    await fsPromises.writeFile(TWO_POINT_FILE, csvData, 'utf8');
+    return true;
+  } catch (error) {
+    console.error('Error writing 2-point configs:', error);
+    return false;
+  }
+});
+
+ipcMain.handle('read-3point-configs', async () => {
+  try {
+    await ensure3PointConfig();
+    const data = await fsPromises.readFile(THREE_POINT_FILE, 'utf8');
+    return convertFromCSV(data, THREE_POINT_HEADERS);
+  } catch (error) {
+    console.error('Error reading 3-point configs:', error);
+    return [];
+  }
+});
+
+ipcMain.handle('write-3point-configs', async (event, configs) => {
+  try {
+    await ensure3PointConfig();
+    const csvData = convertToCSV(configs, THREE_POINT_HEADERS);
+    await fsPromises.writeFile(THREE_POINT_FILE, csvData, 'utf8');
+    return true;
+  } catch (error) {
+    console.error('Error writing 3-point configs:', error);
+    return false;
+  }
+});
 
 // -------------------------
 // Pulse coil helper
@@ -1037,6 +1148,7 @@ async function pulseCoil(coil) {
 // Safe command execution - QUEUED VERSION
 // -------------------------
 function safeExecute(commandName, action) {
+  console.log(`📥 safeExecute: Requesting command: ${commandName}`);
   return new Promise((resolve, reject) => {
     // 1. Validate connection first (fail fast)
     // Note: client.isOpen checks properly, isConnected is our own flag
@@ -1051,10 +1163,12 @@ function safeExecute(commandName, action) {
     }
 
     // 2. Push to queue
+    console.log(`📥 safeExecute: Queueing command: ${commandName}. Current queue length: ${commandQueue.length}`);
     commandQueue.push({
       commandName,
       task: async () => {
         try {
+          console.log(`⚡ safeExecute executing task: ${commandName}`);
           // Wrap the action to ensure it returns standard format or throws
           const result = await action();
           // Automatically inject success: true so frontend is happy
@@ -1179,121 +1293,89 @@ ipcMain.handle("retraction", async () => {
 });
 
 
+// ipcMain.handle("manual", async () => {
+//   console.log("⚡ IPC: manual command received");
+//   return await safeExecute("MANUAL-MODE", async () => {
+//     if (!isConnected) throw new Error('Modbus not connected');
+//     console.log(`🔌 Writing COIL_MANUAL(2001) = true, COIL_MANUAL_EXIT(2002) = false`);
+//     const res1 = await client.writeCoil(COIL_MANUAL, true);
+//     const res2 = await client.writeCoil(COIL_MANUAL_EXIT, false);
+//     console.log(`✅ Modbus write responses:`, res1, res2);
+//     return { manualModeActivated: true };
+//   });
+// });
 ipcMain.handle("manual", async () => {
   return await safeExecute("MANUAL-MODE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await client.writeCoil(COIL_MANUAL, true);
-    await client.writeCoil(COIL_RET, false);
-    await client.writeCoil(COIL_INSERTION, false);
-    await client.writeCoil(COIL_CLAMP, false);
+    // await client.writeCoil(COIL_RET, false);
+    // await client.writeCoil(COIL_INSERTION, false);
+    // await client.writeCoil(COIL_CLAMP, false);
     return { manualModeActivated: true };
   });
 });
 
-ipcMain.handle("heater", async () => {
-  return await safeExecute("HEATER-ON", async () => {
-    if (!isConnected) throw new Error("Modbus not connected");
-
-    // Always turn ON, regardless of state
-    coilState.heater = true;
-    await client.writeCoil(COIL_HEATER, true);
-
-    return { heater: coilState.heater };
+ipcMain.handle("manual-mode-activate", async () => {
+  console.log("⚡ IPC: manual-mode-activate command received");
+  return await safeExecute("MANUAL-MODE-ACTIVATE", async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+    console.log(`🔌 Writing COIL_MANUAL(2001) = true, COIL_MANUAL_EXIT(2002) = false`);
+    const res1 = await client.writeCoil(COIL_MANUAL, true);
+    const res2 = await client.writeCoil(COIL_MANUAL_EXIT, false);
+    console.log(`✅ Modbus write responses:`, res1, res2);
+    return { success: true };
   });
 });
 
-ipcMain.handle("heater-off", async () => {
-  return await safeExecute("HEATER-OFF", async () => {
-    if (!isConnected) throw new Error("Modbus not connected");
-
-    // Always turn OFF
-    coilState.heater = false;
-    await client.writeCoil(COIL_HEATER, false);
-
-    return { heater: coilState.heater };
+ipcMain.handle("manual-mode-deactivate", async () => {
+  return await safeExecute("MANUAL-MODE-DEACTIVATE", async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+    await client.writeCoil(COIL_MANUAL, false);
+    await client.writeCoil(COIL_MANUAL_EXIT, true);
+    return { success: true };
   });
 });
 
-let clampState = false;
-ipcMain.handle("clamp", async () => {
-  return await safeExecute("CLAMP", async () => {
-    if (!isConnected) throw new Error("Modbus not connected");
-
-    clampState = !clampState;
-
-    await client.writeCoil(COIL_MANUAL, true);
-
-
-    await client.writeCoil(COIL_CLAMP, clampState);
-
-    return {
-      clampState: clampState ? "ON" : "OFF",
-      message: `Clamp turned ${clampState ? "ON" : "OFF"}`
-    };
+ipcMain.handle("deactivate-manual", async () => {
+  return await safeExecute("DEACTIVATE-MANUAL", async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+    await client.writeCoil(COIL_MANUAL, false);
+    await client.writeCoil(COIL_MANUAL_EXIT, true);
+    return { success: true };
   });
 });
 
-let insertionState = false;
-
-ipcMain.handle("insertion", async () => {
-  return await safeExecute("INSERTION", async () => {
-    if (!isConnected) throw new Error("Modbus not connected");
-
-    insertionState = !insertionState;
-    if (insertionState) retState = false; // Mutual exclusivity: starting insertion stops retraction
-
-    await client.writeCoil(COIL_MANUAL, true);
-    await client.writeCoil(COIL_RET, false);
-    await client.writeCoil(COIL_INSERTION, insertionState);
-
-
-    return {
-      insertionState: insertionState ? "ON" : "OFF",
-      message: `Insertion turned ${insertionState ? "ON" : "OFF"}`
-    };
-  });
-});
-
-let retState = false;
-
-ipcMain.handle("ret", async () => {
-  return await safeExecute("RETRACTION_MANUAL", async () => {
-    if (!isConnected) throw new Error("Modbus not connected");
-
-    retState = !retState;
-    if (retState) insertionState = false; // Mutual exclusivity: starting retraction stops insertion
-
-    await client.writeCoil(COIL_MANUAL, true);
-    await client.writeCoil(COIL_RET, retState);
-    await client.writeCoil(COIL_INSERTION, false);
-
-
-    return {
-      retState: retState ? "ON" : "OFF",
-      message: `Manual Retraction turned ${retState ? "ON" : "OFF"}`
-    };
-  });
-});
-
-// Add near other IPC handlers in main.js
 ipcMain.handle("disable-manual-mode", async () => {
   return await safeExecute("DISABLE-MANUAL-MODE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
-
-    // Reset local states
-    insertionState = false;
-    retState = false;
-
-    // Turn off COIL_MANUAL
     await client.writeCoil(COIL_MANUAL, false);
-
-    // Also turn off related coils
-    await client.writeCoil(COIL_RET, false);
-    await client.writeCoil(COIL_INSERTION, false);
-    await client.writeCoil(COIL_CLAMP, false);
-
+    await client.writeCoil(COIL_MANUAL_EXIT, true);
     return { manualModeDisabled: true };
   });
+});
+
+ipcMain.handle("clamp-control", async () => {
+  return { success: true };
+});
+
+ipcMain.handle("probe-up", async () => {
+  return { success: true };
+});
+
+ipcMain.handle("probe-down", async () => {
+  return { success: true };
+});
+
+ipcMain.handle("probe-stop", async () => {
+  return { success: true };
+});
+
+ipcMain.handle("catheter-forward", async () => {
+  return { success: true };
+});
+
+ipcMain.handle("catheter-backward", async () => {
+  return { success: true };
 });
 
 // Read data handler
@@ -1369,53 +1451,6 @@ ipcMain.handle("delete-config-file", async (event, configName) => {
     return false;
   }
 });
-
-ipcMain.handle('read-2point-configs', async () => {
-  try {
-    await ensure2PointConfig();
-    const data = await fsPromises.readFile(TWO_POINT_FILE, 'utf8');
-    return convertFromCSV(data, TWO_POINT_HEADERS);
-  } catch (error) {
-    console.error('Error reading 2-point configs:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('write-2point-configs', async (event, configs) => {
-  try {
-    await ensure2PointConfig();
-    const csvData = convertToCSV(configs, TWO_POINT_HEADERS);
-    await fsPromises.writeFile(TWO_POINT_FILE, csvData, 'utf8');
-    return true;
-  } catch (error) {
-    console.error('Error writing 2-point configs:', error);
-    return false;
-  }
-});
-
-ipcMain.handle('read-3point-configs', async () => {
-  try {
-    await ensure3PointConfig();
-    const data = await fsPromises.readFile(THREE_POINT_FILE, 'utf8');
-    return convertFromCSV(data, THREE_POINT_HEADERS);
-  } catch (error) {
-    console.error('Error reading 3-point configs:', error);
-    return [];
-  }
-});
-
-ipcMain.handle('write-3point-configs', async (event, configs) => {
-  try {
-    await ensure3PointConfig();
-    const csvData = convertToCSV(configs, THREE_POINT_HEADERS);
-    await fsPromises.writeFile(THREE_POINT_FILE, csvData, 'utf8');
-    return true;
-  } catch (error) {
-    console.error('Error writing 3-point configs:', error);
-    return false;
-  }
-});
-
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 ipcMain.handle("send-process-mode", async (event, config) => {
   return await safeExecute("SEND_PROCESS_CONFIG", async () => {
@@ -1545,26 +1580,26 @@ ipcMain.handle("check-for-updates", async () => {
   }
 });
 // Add handler for update progress
-ipcMain.handle("get-update-progress",() => {
-  return { success: false, error: error.message};
+ipcMain.handle("get-update-progress", () => {
+  // Placeholder or state return if needed
+  return { success: true };
 });
 
 // -------------------------
-// App lifecycle - FIXED
+// App lifecycle
 // -------------------------
-autoUpdater.on('update-available', () => {
-  mainWindow.webContents.send('update_available');
+ipcMain.handle("download-update", async () => {
+  autoUpdater.downloadUpdate();
+  return { success: true };
 });
-autoUpdater.on('update-downloaded', () => {
-  mainWindow.webContents.send('update_ready');
-});
-ipcMain.on('restart_app', () => {
+
+ipcMain.handle("quit-and-install", () => {
   autoUpdater.quitAndInstall();
 });
 
 app.whenReady().then(() => {
   createWindow();
-  
+
   // Check for updates on startup (with a small delay to ensure window is ready)
   if (!isDev) {
     setTimeout(() => {

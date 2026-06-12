@@ -7,12 +7,14 @@ contextBridge.exposeInMainWorld("api", {
   readConfigFile: () => ipcRenderer.invoke("read-config-file"),
   writeConfigFile: (configs) => ipcRenderer.invoke("write-config-file", configs),
   deleteConfigFile: (configName) => ipcRenderer.invoke("delete-config-file", configName),
-  sendProcessMode: (config) => ipcRenderer.invoke("send-process-mode", config),
+  // sendProcessMode: (config) => ipcRenderer.invoke("send-process-mode", config),
   
   read2PointConfigs: () => ipcRenderer.invoke("read-2point-configs"),
   write2PointConfigs: (configs) => ipcRenderer.invoke("write-2point-configs", configs),
+  send2PointConfig: (config) => ipcRenderer.invoke("send-2point-config", config),
   read3PointConfigs: () => ipcRenderer.invoke("read-3point-configs"),
   write3PointConfigs: (configs) => ipcRenderer.invoke("write-3point-configs", configs),
+  send3PointConfig: (config) => ipcRenderer.invoke("send-3point-config", config),
 
   // ============= COMMAND FUNCTIONS =============
   home: () => ipcRenderer.invoke("home"),

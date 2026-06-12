@@ -37,12 +37,11 @@ const LoadTwoPointConfig = () => {
     }
 
     try {
-      // Just mock for now or use the sendProcessMode if it works with these fields
-      const success = await window.api.sendProcessMode({
-        // pathlength: selectedConfig.testLength,
-        thresholdForce: selectedConfig.forceLimit,
-        insertionLength: selectedConfig.probeTravelLimit,
-        // retractionLength: 0 // Mocking to avoid undefined issues
+      // Call the 2-point config API with all required parameters
+      const success = await window.api.send2PointConfig({
+        probeTravelLimit: selectedConfig.probeTravelLimit,  // Maps to R1
+        forceLimit: selectedConfig.forceLimit,              // Maps to R2
+        testSpeed: selectedConfig.testSpeed                 // Maps to R3
       });
 
       if (!success) {
@@ -55,6 +54,7 @@ const LoadTwoPointConfig = () => {
 
     } catch (error) {
       console.error("PLC transfer failed:", error);
+      alert("Failed to send configuration to PLC.");
     }
   };
 
