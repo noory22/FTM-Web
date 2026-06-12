@@ -1350,6 +1350,8 @@ ipcMain.handle("manual", async () => {
   return await safeExecute("MANUAL-MODE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await client.writeCoil(COIL_MANUAL, true);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     // await client.writeCoil(COIL_RET, false);
     // await client.writeCoil(COIL_INSERTION, false);
     // await client.writeCoil(COIL_CLAMP, false);
@@ -1361,9 +1363,11 @@ ipcMain.handle("manual-mode-activate", async () => {
   console.log("⚡ IPC: manual-mode-activate command received");
   return await safeExecute("MANUAL-MODE-ACTIVATE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
-    console.log(`🔌 Writing COIL_MANUAL(2001) = true, COIL_MANUAL_EXIT(2002) = false`);
+    console.log(`🔌 Writing COIL_MANUAL(2001) = true, COIL_MANUAL_EXIT(2002) = false, COIL_2POINT = false, COIL_3POINT = false`);
     const res1 = await client.writeCoil(COIL_MANUAL, true);
     const res2 = await client.writeCoil(COIL_MANUAL_EXIT, false);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     console.log(`✅ Modbus write responses:`, res1, res2);
     return { success: true };
   });
@@ -1374,6 +1378,8 @@ ipcMain.handle("manual-mode-deactivate", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await client.writeCoil(COIL_MANUAL, false);
     await client.writeCoil(COIL_MANUAL_EXIT, true);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     return { success: true };
   });
 });
@@ -1409,6 +1415,8 @@ ipcMain.handle("deactivate-manual", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await client.writeCoil(COIL_MANUAL, false);
     await client.writeCoil(COIL_MANUAL_EXIT, true);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     return { success: true };
   });
 });
@@ -1418,6 +1426,8 @@ ipcMain.handle("disable-manual-mode", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await client.writeCoil(COIL_MANUAL, false);
     await client.writeCoil(COIL_MANUAL_EXIT, true);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     return { manualModeDisabled: true };
   });
 });

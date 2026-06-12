@@ -84,6 +84,8 @@ const AppShell = () => {
           await window.api?.threePointActivate?.();
         } else if (location.pathname.includes('manual-mode')) {
           await window.api?.manualModeActivate?.();
+        } else {
+          await window.api?.deactivateManual?.();
         }
       } catch (err) {
         console.error('Error auto-activating mode based on route:', err);
