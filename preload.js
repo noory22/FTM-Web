@@ -21,10 +21,7 @@ contextBridge.exposeInMainWorld("api", {
   start: () => ipcRenderer.invoke("start"),
   stop: () => ipcRenderer.invoke("stop"),
   reset: () => ipcRenderer.invoke("reset"),
-  heating: () => ipcRenderer.invoke("heating"),
-  heater: () => ipcRenderer.invoke("heater"),
-  heaterOff: () => ipcRenderer.invoke("heater-off"),
-  retraction: () => ipcRenderer.invoke("retraction"),
+
   manual: () => ipcRenderer.invoke("manual"),
   clamp: () => ipcRenderer.invoke("clamp"),
   insertion: () => ipcRenderer.invoke("insertion"),

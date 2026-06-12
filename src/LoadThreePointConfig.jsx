@@ -53,7 +53,7 @@ const LoadThreePointConfig = () => {
         return;
       }
 
-      localStorage.setItem('selectedConfig', JSON.stringify(selectedConfig));
+      localStorage.setItem('selectedConfig', JSON.stringify({ ...selectedConfig, testType: '3-point' }));
       navigate('/process-mode');
 
     } catch (error) {

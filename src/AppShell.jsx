@@ -201,12 +201,26 @@ const AppShell = () => {
       const is2Point = path.includes('2-point');
       navigate(`/test-action/${is2Point ? '2-point' : '3-point'}`);
     } else if (path.includes('process-mode')) {
-      // Don't allow backing out if process is actively running and not finished/ready
-      if (plcData.machineStatus !== 'READY' && plcData.machineStatus !== 'IDLE' && plcData.machineStatus !== 'UNKNOWN' && plcData.machineStatus !== 'COMPLETED') {
+      // Check machine status from R11 value — allow back only in safe states
+      const safeStatuses = ['IDLE', 'READY', 'UNKNOWN', 'COMPLETED'];
+      if (!safeStatuses.includes(plcData.machineStatus)) {
         alert("Please STOP and RESET the process before navigating away.");
         return;
       }
-      navigate('/main-menu');
+      // Navigate back to the correct Load Config page based on testType
+      try {
+        const storedConfig = localStorage.getItem('selectedConfig');
+        if (storedConfig) {
+          const config = JSON.parse(storedConfig);
+          if (config.testType === '3-point') {
+            navigate('/load-config/3-point');
+            return;
+          }
+        }
+      } catch (e) {
+        console.error('Error reading testType from localStorage:', e);
+      }
+      navigate('/load-config/2-point');
     } else {
       navigate('/main-menu');
     }

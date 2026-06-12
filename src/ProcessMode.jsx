@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Line } from "react-chartjs-2";
 import {
   Chart as ChartJS,
@@ -16,20 +16,17 @@ import {
   Pause,
   RotateCcw,
   Power,
-  Camera,
-  ArrowLeft,
-  Usb,
   Info,
   X,
   Activity,
-  Thermometer,
   Gauge,
   Ruler,
-  Flame,
+  Usb,
+  ArrowRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-// Register ChartJS components
+// ── Chart.js registration ──────────────────────────────────────────────────────
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -38,1223 +35,291 @@ ChartJS.register(
   Title,
   Tooltip,
   Legend,
-  Filler,
+  Filler
 );
+
+// ── Status helpers ─────────────────────────────────────────────────────────────
+const STATUS_META = {
+  IDLE:              { color: "text-slate-500",  dot: "bg-slate-400",              badge: "bg-slate-100 text-slate-600",           pulse: false },
+  HOMING:            { color: "text-amber-600",  dot: "bg-amber-500 animate-pulse", badge: "bg-amber-100 text-amber-700",           pulse: true  },
+  READY:             { color: "text-green-600",  dot: "bg-green-500",               badge: "bg-green-100 text-green-700",           pulse: false },
+  "SEARCHING CONTACT":{ color: "text-sky-600",   dot: "bg-sky-500 animate-pulse",   badge: "bg-sky-100 text-sky-700",              pulse: true  },
+  RUNNING:           { color: "text-blue-600",   dot: "bg-blue-500 animate-pulse",  badge: "bg-blue-100 text-blue-700",             pulse: true  },
+  RETRACTING:        { color: "text-purple-600", dot: "bg-purple-500 animate-pulse",badge: "bg-purple-100 text-purple-700",         pulse: true  },
+  COMPLETED:         { color: "text-teal-600",   dot: "bg-teal-500",                badge: "bg-teal-100 text-teal-700",             pulse: false },
+  UNKNOWN:           { color: "text-gray-400",   dot: "bg-gray-300",                badge: "bg-gray-100 text-gray-500",             pulse: false },
+};
+
+const getStatusMeta = (status) =>
+  STATUS_META[status] || STATUS_META.UNKNOWN;
+
+// Safe statuses where back / navigation is allowed
+const SAFE_STATUSES = new Set(["IDLE", "READY", "COMPLETED", "UNKNOWN"]);
 
 const ProcessMode = () => {
   const navigate = useNavigate();
+
+  // ── Connection ───────────────────────────────────────────────────────────────
   const [isConnected, setIsConnected] = useState(false);
-  const [sensorData, setSensorData] = useState({
-    temperature: "--",
-    temperatureDisplay: "-- °C",
-    force: "--",
-    forceDisplay: "-- mN",
-    force_mN: "--",
-    force_mN_Display: "-- mN",
-    distance: "--",
-    distanceDisplay: "-- mm",
-    status: "READY",
-  });
-  const [readData, setReadData] = useState({
-    temperature: "--",
-    temperatureDisplay: "-- °C",
-    force: "--",
-    forceDisplay: "-- mN",
-    force_mN: "--",
-    force_mN_Display: "-- mN",
-    distance: "--",
-    distanceDisplay: "-- mm",
-  });
-  const [chartData, setChartData] = useState([]);
-  const [reachedCurves, setReachedCurves] = useState({});
-  const [isProcessRunning, setIsProcessRunning] = useState(false);
-  const [isPaused, setIsPaused] = useState(false);
-  const [isHoming, setIsHoming] = useState(false);
+
+  // ── Config ───────────────────────────────────────────────────────────────────
   const [selectedConfig, setSelectedConfig] = useState(null);
+  const is3Point = selectedConfig?.testType === "3-point";
+
+  // ── Live sensor data ─────────────────────────────────────────────────────────
+  const [liveData, setLiveData] = useState({
+    machineStatus: "IDLE",
+    probeDistance: "--",
+    catheterDistance: "--",
+    force: "--",
+    stepsToMove: "--",
+  });
+
+  // ── Chart data (Force vs Probe Distance) ─────────────────────────────────────
+  const [chartData, setChartData] = useState([]);
+
+  // ── CSV logging ───────────────────────────────────────────────────────────────
+  const [isLogging, setIsLogging] = useState(false);
+  const lastLogRef = useRef({ distance: null, force: null });
+
+  // ── UI ────────────────────────────────────────────────────────────────────────
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showConfigPanel, setShowConfigPanel] = useState(false);
-  const [configButtonPos, setConfigButtonPos] = useState({
-    x: window.innerWidth - 70,
-    y: 168,
-  });
-  const [isDraggingConfig, setIsDraggingConfig] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const startTimeRef = useRef(Date.now());
-  const pauseTimeRef = useRef(null);
-  const [isRetractionEnabled, setIsRetractionEnabled] = useState(false);
-  const [isRetractionActive, setIsRetractionActive] = useState(false);
-  const [isRetractionPaused, setIsRetractionPaused] = useState(false);
-  const [isRetractionCompleted, setIsRetractionCompleted] = useState(false);
-  const [showForceLimitAlert, setShowForceLimitAlert] = useState(false);
+  const prevStatusRef = useRef("IDLE");
 
-  // Temperature check state
-  const [temperatureStatus, setTemperatureStatus] = useState({
-    isHeatingRequired: false,
-    isHeatingActive: false,
-    showHeatingDialog: false,
-    heaterButtonDisabled: false,
-    targetTemperature: null,
-    lastHeatingState: null,
-  });
-
-  const [isLogging, setIsLogging] = useState(false);
-  const lastLoggedDataRef = useRef({ time: null, distance: null, force: null });
-
-  const [screenSize, setScreenSize] = useState({
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
-
-  // NEW: COIL_LLS status state
-  const [coilLLSStatus, setCoilLLSStatus] = useState(false);
-  const [powerActive, setPowerActive] = useState(false);
-
+  // ── Screen size ───────────────────────────────────────────────────────────────
+  const [screenW, setScreenW] = useState(window.innerWidth);
   useEffect(() => {
-    const handleResize = () => {
-      setScreenSize({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    const onResize = () => setScreenW(window.innerWidth);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
   }, []);
+  const isXl = screenW >= 1920;
+  const isLg = screenW >= 1366 && screenW < 1920;
 
-  const isXlScreen = screenSize.width >= 1920;
-  const isLgScreen = screenSize.width >= 1366 && screenSize.width < 1920;
-  const isMdScreen = screenSize.width >= 1024 && screenSize.width < 1366;
-  const isSmScreen = screenSize.width < 1024;
-
-  //-------------------------------------------------------------------------//
-  // NEW: COIL_LLS Monitoring - Continuously monitor COIL_LLS status
-  //-------------------------------------------------------------------------//
+  // ── Load config from localStorage ─────────────────────────────────────────────
   useEffect(() => {
-    console.log("🔍 Setting up COIL_LLS monitoring for Process Mode...");
-
-    // Event listener for real-time COIL_LLS updates from main process
-    const handleLLSStatusChange = (event) => {
-      // The event data comes as string 'true' or 'false' from main.js
-      const isLLSTrue = event.detail === "true" || event.detail === true;
-
-      console.log(
-        `🔄 Process Mode - COIL_LLS Event Received: ${isLLSTrue ? "TRUE" : "FALSE"}`,
-      );
-
-      // Update COIL_LLS status state
-      setCoilLLSStatus(isLLSTrue);
-
-      // If COIL_LLS becomes TRUE, update sensor status to READY (if not in other states)
-      if (isLLSTrue && sensorData.status === "HOMING") {
-        console.log("✅ Homing complete - changing status to READY");
-        setSensorData((prev) => ({ ...prev, status: "READY" }));
-        setIsHoming(false);
-      }
-
-      // If COIL_LLS becomes FALSE, motor has moved away from home position
-      if (!isLLSTrue) {
-        console.log("🔄 Motor moved away from home - COIL_LLS is FALSE");
-      }
-    };
-
-    // Setup event listener for COIL_LLS changes
-    window.addEventListener("lls-status-change", handleLLSStatusChange);
-
-    // Listen for power status updates
-    const handlePowerStatusChange = (event) => {
-      setPowerActive(event.detail === true);
-    };
-    window.addEventListener("power-status-change", handlePowerStatusChange);
-
-    // Initial power status check
-    window.api.checkPowerStatus().then(status => {
-      setPowerActive(status.active);
-    }).catch(err => console.error("Error checking initial power status:", err));
-
-    console.log("✅ Process Mode status monitoring setup complete");
-
-    // Cleanup
-    return () => {
-      console.log("🧹 Cleaning up Process Mode status monitoring");
-      window.removeEventListener("lls-status-change", handleLLSStatusChange);
-      window.removeEventListener("power-status-change", handlePowerStatusChange);
-    };
-  }, [sensorData.status]);
-
-  useEffect(() => {
-    let intervalId;
-
-    const pollSensorData = async () => {
-      try {
-        const data = await window.api.readData();
-
-        if (data && data.success) {
-          // Fix: Handle 0 properly (0 is falsy in JS)
-          const formatVal = (val, unit) =>
-            val !== undefined && val !== null && val !== "--"
-              ? `${val} ${unit}`
-              : `-- ${unit}`;
-          const formatTemp = (val) => {
-            if (val === undefined || val === null || val === "--")
-              return "-- °C";
-            const num = parseFloat(val);
-            if (!isNaN(num) && num > 100) return "ERROR 01";
-            return `${val} °C`;
-          };
-          const rawVal = (val) =>
-            val !== undefined && val !== null ? val : "--";
-
-          // Helper for number formatting
-          const toFixed2 = (val) => {
-            const num = parseFloat(val);
-            return isNaN(num) ? val : num.toFixed(2);
-          };
-
-          setReadData({
-            temperature: rawVal(data.temperature),
-            temperatureDisplay: formatTemp(data.temperature),
-            force: rawVal(data.force_mN),
-            forceDisplay: formatVal(toFixed2(data.force_mN), "mN"),
-            force_mN: rawVal(data.force_mN),
-            force_mN_Display: formatVal(toFixed2(data.force_mN), "mN"),
-            distance: rawVal(data.distance),
-            distanceDisplay: formatVal(data.distance, "mm"),
-          });
-
-          setSensorData((prev) => ({
-            ...prev,
-            temperature: formatTemp(data.temperature),
-            force: formatVal(toFixed2(data.force_mN), "mN"),
-            distance: formatVal(data.distance, "mm"),
-          }));
-
-          // Updated: Continuously update COIL_LLS status from polling
-          if (data.coilLLS !== undefined) {
-            setCoilLLSStatus(Boolean(data.coilLLS));
-          }
-
-          // ---------------------------------------------------------------------------
-          // NEW: Auto-Pause if Force Threshold Exceeded
-          // ---------------------------------------------------------------------------
-          if (
-            selectedConfig &&
-            (isProcessRunning || isRetractionActive) &&
-            !isPaused &&
-            !isRetractionPaused &&
-            data.force_mN !== "--"
-          ) {
-            const currentForce = parseFloat(data.force_mN);
-            const thresholdForce = parseFloat(selectedConfig.thresholdForce);
-
-            if (
-              !isNaN(currentForce) &&
-              !isNaN(thresholdForce) &&
-              currentForce >= thresholdForce
-            ) {
-              console.warn(
-                `⚠️ FORCE THRESHOLD EXCEEDED! Current=${currentForce}mN, Limit=${thresholdForce}mN. Auto-pausing...`,
-              );
-
-              // Execute Stop Command
-              window.api
-                .stop()
-                .catch((err) => console.error("Failed to auto-stop:", err));
-
-              // Update State to PAUSED
-              setIsProcessRunning(false);
-              setIsPaused(true);
-              pauseTimeRef.current = Date.now();
-
-              if (sensorData.status === "RETRACTION" || isRetractionActive) {
-                setIsRetractionPaused(true);
-                setSensorData((prev) => ({
-                  ...prev,
-                  status: "RETRACTION PAUSED",
-                }));
-              } else {
-                setSensorData((prev) => ({ ...prev, status: "PAUSED" }));
-              }
-
-              // Show Force Limit Alert
-              setShowForceLimitAlert(true);
-            }
-          }
-
-          if (
-            selectedConfig &&
-            data.distance !== "--" &&
-            data.distance !== undefined &&
-            !isRetractionEnabled &&
-            isProcessRunning &&
-            !isPaused
-          ) {
-            const currentDistance = parseFloat(data.distance);
-            const targetDistance = parseFloat(selectedConfig.pathlength);
-
-            const curves = selectedConfig?.curveDistances || {};
-            Object.entries(curves).forEach(([curveLabel, curveVal]) => {
-              const threshold = Number(curveVal);
-
-              if (!reachedCurves[curveLabel] && currentDistance >= threshold) {
-                console.log(
-                  `🔥 Curve ${curveLabel} reached at ${threshold} mm`,
-                );
-                setReachedCurves((prev) => ({
-                  ...prev,
-                  [curveLabel]: true,
-                }));
-              }
-            });
-
-            console.log(
-              `🔍 Distance Check: Current=${currentDistance}mm, Target=${targetDistance}mm, isValid=${!isNaN(currentDistance) && !isNaN(targetDistance)}`,
-            );
-
-            if (!isNaN(currentDistance) && !isNaN(targetDistance)) {
-              if (Math.round(currentDistance) === Math.round(targetDistance)) {
-                console.log(
-                  `✅✅✅ Target distance reached exactly! ${currentDistance}mm = ${targetDistance}mm (rounded)`,
-                );
-                setIsRetractionEnabled(true);
-                setSensorData((prev) => ({
-                  ...prev,
-                  status: "INSERTION COMPLETED",
-                }));
-              } else {
-                console.log(
-                  `📏 Not yet reached: ${currentDistance}mm vs ${targetDistance}mm (rounded: ${Math.round(currentDistance)} vs ${Math.round(targetDistance)})`,
-                );
-              }
-            }
-          }
-
-          // Check if retraction is completed (distance = 0)
-          if (
-            isRetractionActive &&
-            !isRetractionPaused &&
-            data.distance !== "--" &&
-            data.distance !== undefined
-          ) {
-            const currentDistance = parseFloat(data.distance);
-            console.log(
-              `🔍 Retraction Check: Current distance=${currentDistance}mm, isRetractionActive=${isRetractionActive}, isRetractionPaused=${isRetractionPaused}`,
-            );
-
-            if (!isNaN(currentDistance) && Math.round(currentDistance) === 0) {
-              console.log("✅✅✅ RETRACTION COMPLETED! Distance = 0mm");
-              setIsRetractionCompleted(true);
-              setIsRetractionActive(false);
-              setIsRetractionEnabled(false);
-              setIsProcessRunning(false);
-              setSensorData((prev) => ({ ...prev, status: "READY" }));
-
-              // Clear chart data
-              setChartData([]);
-
-              // Clear reached curves
-              setReachedCurves({});
-
-              // Stop CSV logging
-              stopCsvLogging();
-
-              console.log(
-                "🔄 System reset to READY state after retraction completion",
-              );
-            }
-          }
-
-          if (
-            isProcessRunning ||
-            sensorData.status === "PAUSED" ||
-            sensorData.status === "RETRACTION PAUSED"
-          ) {
-            const currentTime = (Date.now() - startTimeRef.current) / 1000;
-            const timeFormatted = parseFloat(currentTime.toFixed(1));
-
-            setChartData((prev) => {
-              const newDataPoint = {
-                time: timeFormatted,
-                distance: parseFloat(data.distance) || 0,
-                force: parseFloat(data.force_mN) || 0,
-              };
-
-              const newData = [...prev, newDataPoint];
-              return newData;
-            });
-          }
-
-          if (
-            (isProcessRunning || isRetractionActive) &&
-            !isPaused &&
-            !isRetractionPaused &&
-            data.distance !== "--" &&
-            data.force_mN !== "--"
-          ) {
-            const currentTime = (Date.now() - startTimeRef.current) / 1000;
-            logSensorData(currentTime.toFixed(1), data.distance, data.force_mN);
-          }
-        } else if (data && !data.success) {
-          setReadData((prev) => ({
-            ...prev,
-            temperatureDisplay: "-- °C",
-            forceDisplay: "-- mN",
-            distanceDisplay: "-- mm",
-          }));
-        }
-      } catch (error) {
-        console.error("Error polling sensor data:", error);
-      }
-    };
-
-    if (isConnected) {
-      // Since readData is now cached in main process, we can poll fast without penalty
-      intervalId = setInterval(pollSensorData, 100);
-      pollSensorData();
-    }
-
-    return () => {
-      if (intervalId) {
-        clearInterval(intervalId);
-      }
-    };
-  }, [
-    isConnected,
-    isProcessRunning,
-    isPaused,
-    sensorData.status,
-    selectedConfig,
-    isRetractionEnabled,
-    isRetractionActive,
-    isRetractionPaused,
-  ]);
-
-  // Check temperature when component mounts or config changes
-  useEffect(() => {
-    if (readData.temperature !== "--") {
-      const realTimeTemp = parseFloat(readData.temperature);
-      // const targetTemp = parseFloat(selectedConfig.temperature); // IGNORED per new requirement
-
-      if (!isNaN(realTimeTemp)) {
-        // Condition: Process should START if 35 < realTimeTemp < 39
-        // So we BLOCK if realTimeTemp <= 35 OR realTimeTemp >= 39
-
-        // Strict range based on user request: "greater than 35 or less than 39" (interpreted as range)
-        const isTempTooLow = realTimeTemp <= 35;
-        const isTempTooHigh = realTimeTemp >= 39;
-        const isTempValid = !isTempTooLow && !isTempTooHigh;
-
-        // Check if process is active (running, paused, or retracting)
-        const isProcessActive =
-          isProcessRunning ||
-          isRetractionActive ||
-          isPaused ||
-          isRetractionPaused;
-
-        console.log(
-          `🌡️ Temperature Check: Real=${realTimeTemp}°C, Range=[35-39], Valid=${isTempValid}`,
-        );
-
-        if (
-          !isTempValid &&
-          !temperatureStatus.isHeatingActive &&
-          !isProcessActive
-        ) {
-          // Show dialog if temperature is invalid AND process is NOT active
-
-          // If too low, we can suggest heating. If too high, we just block.
-          if (isTempTooLow) {
-            setTemperatureStatus((prev) => ({
-              ...prev,
-              isHeatingRequired: true,
-              showHeatingDialog: true,
-              heaterButtonDisabled: false,
-              // targetTemperature: 37, // Optional: default target
-            }));
-          } else if (isTempTooHigh) {
-            // High Temp Case: Show dialog to explain blockage
-            setTemperatureStatus((prev) => ({
-              ...prev,
-              isHeatingRequired: true, // Reuse this flag to block start
-              showHeatingDialog: true, // Show blocking dialog
-              // heaterButtonDisabled: true // Optional: explicit disable
-            }));
-            // Also ensure heater is OFF if too high
-            if (temperatureStatus.isHeatingActive) turnOffHeater();
-          }
-        } else if (isTempValid) {
-          // If in range
-          if (temperatureStatus.isHeatingActive && !isTempTooLow) {
-            // If we were heating and now we are good (or too high), stop.
-            // Note: User logic implies valid is 35-39. Heating takes us UP.
-            // If we reach 35.1, we are valid.
-            // We can keep heating until we reach some target, but technically valid range starts at 35.
-            // Let's rely on the manual heater toggle or auto-off if we defined a target.
-            // For now, if we are in valid range, we UNBLOCK.
-          }
-
-          // Unblock start
-          setTemperatureStatus((prev) => ({
-            ...prev,
-            isHeatingRequired: false,
-            showHeatingDialog: false,
-            // isHeatingActive: false, // Keep active if user wants to keep heating within range
-            heaterButtonDisabled: false,
-          }));
-
-          console.log("✅ Temperature in valid range (35-39) - dialog closed");
-        }
-      }
-    }
-  }, [
-    readData.temperature,
-    isProcessRunning,
-    isRetractionActive,
-    isPaused,
-    isRetractionPaused,
-    temperatureStatus.isHeatingActive,
-  ]);
-
-  // Monitor temperature to auto-close dialog when target is reached or exceeded
-  useEffect(() => {
-    if (temperatureStatus.isHeatingActive && readData.temperature !== "--") {
-      const realTimeTemp = parseFloat(readData.temperature);
-      // const targetTemp = temperatureStatus.targetTemperature || parseFloat(selectedConfig.temperature);
-      // User requirement: Valid if > 35.
-      // If we are heating, we assume we were below 35.
-      // We should probably stop if we are comfortably inside the range (e.g. > 35).
-
-      if (!isNaN(realTimeTemp)) {
-        // Check if temperature is valid (e.g. > 35)
-        const isTempReached = realTimeTemp > 35.0;
-
-        if (isTempReached) {
-          console.log(
-            `✅ Valid temperature reached! Real=${realTimeTemp}°C > 35°C`,
-          );
-
-          // Turn off heater
-          // turnOffHeater(); // User didn't explicitly say to auto-off, but it's good practice.
-          // Note: If they want to reach 37, stopping at 35.01 might be annoying.
-          // I will leave the Heater ON but close the dialog/unblock.
-
-          // Actually, let's just update validity.
-          setTemperatureStatus((prev) => ({
-            ...prev,
-            isHeatingRequired: false,
-            showHeatingDialog: false, // Hide dialog
-            // isHeatingActive: false, // Don't force off, let user decide or reach target
-            heaterButtonDisabled: false,
-          }));
-        }
-      }
-    }
-  }, [readData.temperature, temperatureStatus.isHeatingActive]);
-
-  // Check temperature when component mounts
-  useEffect(() => {
-    if (selectedConfig) {
-      // Small delay to ensure data is loaded
-      setTimeout(() => {
-        if (readData.temperature !== "--") {
-          const realTimeTemp = parseFloat(readData.temperature);
-          // const targetTemp = parseFloat(selectedConfig.temperature);
-
-          if (!isNaN(realTimeTemp)) {
-            // Range check: 35-39
-            const isTempTooLow = realTimeTemp <= 35;
-            const isTempTooHigh = realTimeTemp >= 39;
-            const isInvalid = isTempTooLow || isTempTooHigh;
-
-            if (isInvalid) {
-              console.log(
-                `🔥 Temperature check on entry: Invalid Range (${realTimeTemp}°C). Blocking start.`,
-              );
-              setTemperatureStatus((prev) => ({
-                ...prev,
-                isHeatingRequired: true,
-                showHeatingDialog: true, // Show dialog for BOTH low and high temp
-                // targetTemperature: 37,
-                heaterButtonDisabled: false,
-              }));
-            }
-          }
-        }
-      }, 1000);
-    }
-  }, [selectedConfig]);
-
-  const turnOnHeater = async () => {
     try {
-      console.log("🔥 Turning heater ON...");
-      setTemperatureStatus((prev) => ({
-        ...prev,
-        heaterButtonDisabled: true,
-      }));
-
-      const result = await window.api.heater();
-
-      if (result && result.success) {
-        console.log("✅ Heater turned ON successfully");
-        setTemperatureStatus((prev) => ({
-          ...prev,
-          isHeatingActive: true,
-        }));
-      } else {
-        console.error("❌ Failed to turn heater ON");
-        setTemperatureStatus((prev) => ({
-          ...prev,
-          heaterButtonDisabled: false,
-        }));
-      }
-    } catch (error) {
-      console.error("❌ Error turning heater ON:", error);
-      setTemperatureStatus((prev) => ({
-        ...prev,
-        heaterButtonDisabled: false,
-      }));
-    }
-  };
-
-  const turnOffHeater = async () => {
-    try {
-      console.log("🔥 Turning heater OFF...");
-
-      const result = await window.api.heaterOff();
-
-      if (result && result.success) {
-        console.log("✅ Heater turned OFF successfully");
-        setTemperatureStatus((prev) => ({
-          ...prev,
-          isHeatingActive: false,
-          heaterButtonDisabled: false,
-        }));
-      }
-    } catch (error) {
-      console.error("❌ Error turning heater OFF:", error);
-    }
-  };
-
-  const closeHeatingDialog = async () => {
-    // Turn off heater and navigate back
-    console.log(
-      "🔙 Closing heating dialog: Turning heater OFF and navigating back...",
-    );
-    await turnOffHeater();
-    navigate("/handle-config/load");
-  };
-
-  //-------------------------------------------------------------------------//
-
-  useEffect(() => {
-    const config = localStorage.getItem("selectedConfig");
-    if (config) {
-      setSelectedConfig(JSON.parse(config));
+      const raw = localStorage.getItem("selectedConfig");
+      if (raw) setSelectedConfig(JSON.parse(raw));
+    } catch (e) {
+      console.error("Error reading config from localStorage:", e);
     }
   }, []);
 
-  // UPDATED: LLS Status Change Handler - This should handle events from main.js
+  // ── Connection monitoring ─────────────────────────────────────────────────────
   useEffect(() => {
-    const handleLLSStatusChange = (event) => {
-      if (event.detail === "true") {
-        console.log("🔄 COIL_LLS detected TRUE");
-
-        // Update COIL_LLS status
-        setCoilLLSStatus(true);
-
-        // Only update status to READY if we're coming from HOMING state
-        setSensorData((prev) => {
-          console.log(
-            `📊 Previous status: ${prev.status}, isHoming: ${isHoming}`,
-          );
-
-          // If previous status was HOMING, change to READY
-          if (prev.status === "HOMING") {
-            console.log("✅ Homing complete, changing status to READY");
-            setIsHoming(false);
-            return { ...prev, status: "READY" };
-          }
-
-          // If previous status was INSERTION, RETRACTION, or their paused states,
-          // don't change the status
-          console.log(
-            `⚠️ COIL_LLS triggered but status remains: ${prev.status} (not from HOMING)`,
-          );
-          return prev; // Keep the same status
-        });
-      } else if (event.detail === "false") {
-        console.log("🔄 COIL_LLS detected FALSE");
-        setCoilLLSStatus(false);
-      }
-    };
-
-    window.addEventListener("lls-status-change", handleLLSStatusChange);
-
-    return () => {
-      window.removeEventListener("lls-status-change", handleLLSStatusChange);
-    };
-  }, []);
-
-  const startCsvLogging = async () => {
-    if (!selectedConfig) {
-      console.error("No configuration selected for logging");
-      return;
-    }
-
-    try {
-      console.log("🟡 Starting CSV logging with config:", selectedConfig);
-      const result = await window.api.startCSV(selectedConfig);
-      if (result.success) {
-        setIsLogging(true);
-        console.log("✅ CSV logging started:", result.fileName);
-        lastLoggedDataRef.current = { time: null, distance: null, force: null };
-      } else {
-        console.error("❌ Failed to start CSV logging:", result.error);
-      }
-    } catch (error) {
-      console.error("❌ Error starting CSV logging:", error);
-    }
-  };
-
-  const stopCsvLogging = async () => {
-    if (isLogging) {
+    const check = async () => {
       try {
-        const result = await window.api.stopCSV();
-        if (result.success) {
-          setIsLogging(false);
-          console.log("🟡 CSV logging stopped:", result.fileName);
-        }
-      } catch (error) {
-        console.error("Error stopping CSV logging:", error);
-      }
-    }
-  };
-
-  const logSensorData = async (time, distance, force) => {
-    const timeNum = parseFloat(time);
-    const distNum = parseFloat(distance);
-    const forceNum = parseFloat(force);
-
-    if (
-      isNaN(timeNum) ||
-      isNaN(distNum) ||
-      isNaN(forceNum) ||
-      distance === "--" ||
-      force === "--"
-    ) {
-      return;
-    }
-
-    if (
-      lastLoggedDataRef.current.time === timeNum &&
-      lastLoggedDataRef.current.distance === distNum &&
-      lastLoggedDataRef.current.force === forceNum
-    ) {
-      return;
-    }
-
-    try {
-      console.log(
-        `📊 ATTEMPTING LOG: Time=${timeNum}s, Distance=${distNum}mm, Force=${forceNum}mN, isLogging=${isLogging}`,
-      );
-
-      // Send data with config included
-      await window.api.appendCSV({
-        data: {
-          distance: distNum,
-          force_mN: forceNum,
-          temperature: parseFloat(readData.temperature) || 0,
-        },
-        config: selectedConfig, // Make sure config is included
-      });
-
-      lastLoggedDataRef.current = {
-        time: timeNum,
-        distance: distNum,
-        force: forceNum,
-      };
-      console.log(
-        `✅ SUCCESSFULLY LOGGED: Time=${timeNum}s, Distance=${distNum}mm, Force=${forceNum}mN`,
-      );
-    } catch (error) {
-      console.error("❌ Error logging sensor data:", error);
-    }
-  };
-
-  useEffect(() => {
-    const checkConnection = async () => {
-      try {
-        const connection = await window.api.checkConnection();
-        setIsConnected(connection.connected);
-
-        if (!connection.connected) {
-          setReadData((prev) => ({
-            ...prev,
-            temperatureDisplay: "-- °C",
-            forceDisplay: "-- mN",
-            distanceDisplay: "-- mm",
-          }));
-        }
-      } catch (error) {
-        console.error("Error checking connection:", error);
+        const res = await window.api.checkConnection();
+        setIsConnected(res.connected);
+      } catch {
         setIsConnected(false);
       }
     };
+    check();
 
-    checkConnection();
-
-    const handleModbusStatusChange = (event) => {
-      setIsConnected(event.detail === "connected");
-    };
-
-    window.addEventListener("modbus-status-change", handleModbusStatusChange);
-
-    return () => {
-      window.removeEventListener(
-        "modbus-status-change",
-        handleModbusStatusChange,
-      );
-    };
+    const handler = (e) => setIsConnected(e.detail === "connected");
+    window.addEventListener("modbus-status-change", handler);
+    return () => window.removeEventListener("modbus-status-change", handler);
   }, []);
 
   const handleReconnect = async () => {
     try {
-      console.log("Attempting to reconnect...");
-      const result = await window.api.reconnect();
-      if (result.success && result.connected) {
-        setIsConnected(true);
-        console.log("Reconnect successful");
-      } else {
-        console.log("Reconnect failed");
-      }
-    } catch (error) {
-      console.error("Reconnect error:", error);
+      const res = await window.api.reconnect();
+      if (res.success && res.connected) setIsConnected(true);
+    } catch (e) {
+      console.error("Reconnect error:", e);
     }
   };
 
-  useEffect(() => {
-    const handleMouseMove = (e) => {
-      if (isDraggingConfig) {
-        setConfigButtonPos({
-          x: Math.max(
-            0,
-            Math.min(window.innerWidth - 56, e.clientX - dragOffset.x),
-          ),
-          y: Math.max(
-            0,
-            Math.min(window.innerHeight - 56, e.clientY - dragOffset.y),
-          ),
-        });
-      }
-    };
-
-    const handleMouseUp = () => {
-      setIsDraggingConfig(false);
-    };
-
-    const handleTouchMove = (e) => {
-      if (isDraggingConfig && e.touches.length > 0) {
-        setConfigButtonPos({
-          x: Math.max(
-            0,
-            Math.min(
-              window.innerWidth - 56,
-              e.touches[0].clientX - dragOffset.x,
-            ),
-          ),
-          y: Math.max(
-            0,
-            Math.min(
-              window.innerHeight - 56,
-              e.touches[0].clientY - dragOffset.y,
-            ),
-          ),
-        });
-      }
-    };
-
-    const handleTouchEnd = () => {
-      setIsDraggingConfig(false);
-    };
-
-    if (isDraggingConfig) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
-      window.addEventListener("touchmove", handleTouchMove);
-      window.addEventListener("touchend", handleTouchEnd);
-    }
-
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-      window.removeEventListener("touchmove", handleTouchMove);
-      window.removeEventListener("touchend", handleTouchEnd);
-    };
-  }, [isDraggingConfig, dragOffset]);
-
-  const handleStart = async () => {
-    if (!selectedConfig) {
-      console.error("No configuration selected");
-      return;
-    }
-
-    // Prevent start if heating is required
-    if (temperatureStatus.isHeatingRequired) {
-      console.log("❌ Cannot start process - heating required");
-      return;
-    }
-
+  // ── CSV helpers ───────────────────────────────────────────────────────────────
+  const startCsvLogging = useCallback(async () => {
+    if (!selectedConfig || isLogging) return;
     try {
-      console.log("🚀 Starting process...");
-      let result;
-
-      // Determine if we are starting fresh or from pause
-      const isResuming = isPaused || isRetractionPaused;
-
-      if (isResuming) {
-        console.log("⏯️ Resuming process from pause...");
-        result = await window.api.start();
-      } else {
-        result = await window.api.start();
-        // Also ensure heater is on when starting fresh
-        await window.api.heater();
+      const res = await window.api.startCSV(selectedConfig);
+      if (res.success) {
+        setIsLogging(true);
+        lastLogRef.current = { distance: null, force: null };
+        console.log("✅ CSV logging started:", res.fileName);
       }
+    } catch (e) {
+      console.error("Error starting CSV:", e);
+    }
+  }, [selectedConfig, isLogging]);
 
-      console.log("Start Result:", result);
+  const stopCsvLogging = useCallback(async () => {
+    if (!isLogging) return;
+    try {
+      const res = await window.api.stopCSV();
+      if (res.success) {
+        setIsLogging(false);
+        console.log("🟡 CSV logging stopped:", res.fileName);
+      }
+    } catch (e) {
+      console.error("Error stopping CSV:", e);
+    }
+  }, [isLogging]);
 
-      if (result && result.success) {
-        console.log("✅ Start command accepted by main process");
-        setIsProcessRunning(true);
-        setIsPaused(false);
-        setIsRetractionPaused(false);
-        setIsRetractionCompleted(false);
-        setIsHoming(false);
+  // ── Poll PLC data ─────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isConnected) return;
 
-        if (isRetractionEnabled && isRetractionActive) {
-          setSensorData((prev) => ({ ...prev, status: "RETRACTION" }));
-        } else {
-          setSensorData((prev) => ({ ...prev, status: "INSERTION" }));
+    const poll = async () => {
+      try {
+        const data = await window.api.readData();
+        if (!data?.success) return;
+
+        const status = data.machineStatusDisplay || "IDLE";
+        const probeDistance = data.distance !== undefined && data.distance !== null
+          ? parseFloat(data.distance)
+          : null;
+        const catheterDistance = data.catheterDistance !== undefined && data.catheterDistance !== null
+          ? parseFloat(data.catheterDistance)
+          : null;
+        const force = data.force_mN !== undefined && data.force_mN !== null
+          ? parseFloat(data.force_mN)
+          : null;
+        const stepsToMove = data.stepsToMove !== undefined ? data.stepsToMove : "--";
+
+        setLiveData({
+          machineStatus: status,
+          probeDistance:    probeDistance    !== null ? probeDistance.toFixed(2)    : "--",
+          catheterDistance: catheterDistance !== null ? catheterDistance.toFixed(2) : "--",
+          force:            force            !== null ? force.toFixed(2)            : "--",
+          stepsToMove: stepsToMove,
+        });
+
+        // ── Auto CSV: start when RUNNING, stop when COMPLETED or IDLE ───────────
+        const prev = prevStatusRef.current;
+        if (status === "RUNNING" && prev !== "RUNNING") {
+          startCsvLogging();
         }
+        if ((status === "COMPLETED" || status === "IDLE") && isLogging) {
+          stopCsvLogging();
+        }
+        prevStatusRef.current = status;
 
-        // Handle time adjustment for seamless graph resumption
-        if (isResuming && pauseTimeRef.current) {
-          const pauseDuration = Date.now() - pauseTimeRef.current;
-          startTimeRef.current += pauseDuration;
-          console.log(
-            `⏱️ Adjusted start time by ${pauseDuration}ms to account for pause`,
-          );
-          pauseTimeRef.current = null;
-        } else if (!isResuming) {
-          // Only reset start time if not resuming
-          startTimeRef.current = Date.now();
-          pauseTimeRef.current = null;
-          // Clear chart if new run
-          if (!isRetractionActive) {
-            setChartData([]);
+        // ── Chart & log while RUNNING / SEARCHING CONTACT / RETRACTING ───────────
+        const activeStatuses = new Set(["SEARCHING CONTACT", "RUNNING", "RETRACTING"]);
+        if (activeStatuses.has(status) && probeDistance !== null && force !== null) {
+          setChartData((prev) => [
+            ...prev,
+            { x: probeDistance, y: force },
+          ]);
+
+          // CSV row append
+          if (
+            isLogging &&
+            (lastLogRef.current.distance !== probeDistance ||
+              lastLogRef.current.force !== force)
+          ) {
+            try {
+              await window.api.appendCSV({
+                data: { distance: probeDistance, force_mN: force, temperature: 0 },
+                config: selectedConfig,
+              });
+              lastLogRef.current = { distance: probeDistance, force };
+            } catch (e) {
+              console.error("CSV append error:", e);
+            }
           }
         }
 
-        console.log("🟡 Process started/resumed, starting CSV logging...");
-        if (!isLogging) {
-          if (selectedConfig) {
-            startCsvLogging();
-          } else {
-            console.error("❌ Cannot start logging: missing config");
-          }
+        // ── Clear chart on reset (status goes to HOMING/IDLE from non-idle) ─────
+        if (status === "HOMING" && prev !== "HOMING") {
+          setChartData([]);
+          lastLogRef.current = { distance: null, force: null };
         }
-      } else {
-        console.error("Failed to start process:", result?.message);
+      } catch (e) {
+        console.error("Poll error:", e);
       }
-    } catch (error) {
-      console.error("Failed to start process:", error);
+    };
+
+    const intervalId = setInterval(poll, 100);
+    poll();
+    return () => clearInterval(intervalId);
+  }, [isConnected, isLogging, selectedConfig, startCsvLogging, stopCsvLogging]);
+
+  // ── Button handlers ───────────────────────────────────────────────────────────
+  const handleStart = async () => {
+    try {
+      const res = await window.api.start();
+      if (!res?.success) console.error("Start failed:", res?.message);
+    } catch (e) {
+      console.error("Start error:", e);
     }
   };
 
   const handlePause = async () => {
     try {
-      console.log("⏸️ Pausing process...");
-      const result = await window.api.stop();
-
-      if (result && result.success) {
-        setIsProcessRunning(false);
-        setIsPaused(true);
-
-        // Track pause time
-        pauseTimeRef.current = Date.now();
-
-        // Handle retraction pause state correctly
-        if (sensorData.status === "RETRACTION") {
-          setIsRetractionPaused(true);
-          setSensorData((prev) => ({ ...prev, status: "RETRACTION PAUSED" }));
-        } else {
-          setIsRetractionActive(false);
-          setIsRetractionPaused(false);
-
-          if (
-            sensorData.status === "INSERTION" ||
-            sensorData.status === "INSERTION COMPLETED"
-          ) {
-            setSensorData((prev) => ({ ...prev, status: "PAUSED" }));
-          }
-        }
-
-        console.log("Process paused");
-      }
-    } catch (error) {
-      console.error("Failed to pause process:", error);
-    }
-  };
-
-  const handleRetraction = async () => {
-    try {
-      console.log("🔄 Starting retraction...");
-
-      // If running, stop first
-      if (isProcessRunning && !isPaused && !isRetractionPaused) {
-        console.log("⚠️ Process running, stopping before retraction...");
-        await window.api.stop();
-        await new Promise((r) => setTimeout(r, 200));
-      }
-
-      const result = await window.api.retraction();
-
-      if (result && result.success) {
-        setIsRetractionActive(true);
-        setIsRetractionPaused(false);
-        setIsRetractionCompleted(false);
-        setIsProcessRunning(true);
-        setIsPaused(false);
-        setSensorData((prev) => ({ ...prev, status: "RETRACTION" }));
-
-        // Ensure logging is active
-        if (!isLogging && selectedConfig) {
-          console.log("📝 Ensuring CSV logging is active for retraction");
-          startCsvLogging();
-        }
-
-        console.log("✅ Retraction started");
-      } else {
-        console.error("Failed to start retraction:", result?.message);
-      }
-    } catch (error) {
-      console.error("Failed to start retraction:", error);
+      const res = await window.api.stop();
+      if (!res?.success) console.error("Pause failed:", res?.message);
+    } catch (e) {
+      console.error("Pause error:", e);
     }
   };
 
   const handleReset = async () => {
     try {
-      console.log("🔄 Resetting process...");
-      const result = await window.api.reset();
-
-      if (result && result.success) {
-        setIsProcessRunning(false);
-        setIsPaused(false);
-        setIsHoming(true);
-        setIsRetractionEnabled(false);
-        setIsRetractionActive(false);
-        setIsRetractionPaused(false);
-        setIsRetractionCompleted(false);
+      const res = await window.api.reset();
+      if (res?.success) {
         setChartData([]);
-        setReachedCurves({});
-        setSensorData((prev) => ({
-          ...prev,
-          force: "--",
-          distance: "--",
-          status: "HOMING",
-        }));
-
-        // Reset temperature status
-        setTemperatureStatus({
-          isHeatingRequired: false,
-          isHeatingActive: false,
-          showHeatingDialog: false,
-          heaterButtonDisabled: false,
-          targetTemperature: null,
-          lastHeatingState: null,
-        });
-
-        stopCsvLogging();
-        console.log("Process reset");
+        lastLogRef.current = { distance: null, force: null };
+        await stopCsvLogging();
       } else {
-        console.error("Failed to reset process:", result?.message);
+        console.error("Reset failed:", res?.message);
       }
-    } catch (error) {
-      console.error("Failed to reset process:", error);
+    } catch (e) {
+      console.error("Reset error:", e);
     }
   };
 
-  const shouldDisableButtons = () => {
-    return isHoming || !selectedConfig;
+  // Button enable rules driven purely by R11 status
+  const status = liveData.machineStatus;
+  const canStart  = isConnected && ["IDLE", "READY", "SEARCHING CONTACT"].includes(status);
+  const canPause  = isConnected && ["RUNNING", "SEARCHING CONTACT", "RETRACTING"].includes(status);
+  const canReset  = isConnected && SAFE_STATUSES.has(status) && status !== "UNKNOWN";
+
+  // ── Chart config ──────────────────────────────────────────────────────────────
+  const chartConfig = {
+    datasets: [
+      {
+        label: "Force (mN)",
+        data: chartData,
+        borderColor: "#3b82f6",
+        backgroundColor: "rgba(59,130,246,0.08)",
+        fill: false,
+        tension: 0,
+        pointRadius: 0,
+        pointHoverRadius: 4,
+        borderWidth: 2.5,
+      },
+    ],
   };
 
-  // Add this to prevent process start when heating is required
-  const shouldDisableStartButton = () => {
-    if (shouldDisableButtons()) return true;
-    if (temperatureStatus.isHeatingRequired) return true; // Disable if heating is required
-    if (isRetractionEnabled && !isRetractionPaused) return true;
-    if (isRetractionPaused) return true;
-    if (isRetractionCompleted) return false;
-    if (isProcessRunning && !isPaused && !isRetractionPaused) return true;
-    return false;
-  };
-
-  const shouldDisablePauseButton = () => {
-    if (shouldDisableButtons()) return true;
-    if (isRetractionCompleted) return true;
-
-    if (
-      !isProcessRunning &&
-      !isPaused &&
-      !isRetractionActive &&
-      !isRetractionPaused
-    ) {
-      return true;
-    }
-
-    return false;
-  };
-
-  // UPDATED: Reset button logic based on COIL_LLS status
-  const shouldDisableRetractionButton = () => {
-    if (shouldDisableButtons()) return true;
-    if (isRetractionCompleted) return true;
-    if (!isRetractionEnabled) return true;
-
-    if (isRetractionActive && !isRetractionPaused) return true;
-
-    return false;
-  };
-
-  const shouldDisableResetButton = () => {
-    // If COIL_LLS is TRUE, disable reset button
-    if (coilLLSStatus) {
-      console.log("🔄 Reset button disabled because COIL_LLS is TRUE");
-      return true;
-    }
-
-    // Other conditions from original logic
-    if (!selectedConfig || isHoming) return true;
-    if (isRetractionCompleted) return true; // Disable when retraction is completed
-
-    return false;
-  };
-
-  const handleBack = () => {
-    navigate("/main-menu");
-  };
-
-  const getStartButtonText = () => {
-    if (isPaused && sensorData.status === "PAUSED") return "RESUME";
-    if (isRetractionCompleted) return "START"; // Show START when retraction is completed
-    return "START";
-  };
-
-  const getRetractionButtonText = () => {
-    if (isRetractionPaused) return "RESUME RETRACTION";
-    return "RETRACTION";
-  };
-
-  const shouldDisableBackButton = () => {
-    if (isRetractionCompleted) return false; // Enable back button when retraction is completed
-    return sensorData.status !== "READY";
-  };
-
-  const shouldDisablePowerButton = () => {
-    if (isRetractionCompleted) return false; // Enable power button when retraction is completed
-    return sensorData.status !== "READY";
-  };
-
-  // NEW: Helper function to get COIL_LLS status display
-  const getCoilLLSDisplay = () => {
-    return coilLLSStatus ? "TRUE" : "FALSE";
-  };
-
-  // NEW: Helper function to get COIL_LLS color
-  const getCoilLLSColor = () => {
-    return coilLLSStatus ? "text-green-600" : "text-red-600";
-  };
-
-  // Prepare chart data for react-chartjs-2
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    animation: {
-      duration: 0, // Disable animations to prevent flickering
-    },
-    interaction: {
-      intersect: false,
-      mode: "index",
-    },
+    animation: { duration: 0 },
+    interaction: { mode: "index", intersect: false },
     plugins: {
-      // legend: {
-      //   display: false,
-      // },
       legend: {
         display: true,
-        position: 'top',
-        labels: {
-          filter: function(item) {
-            // Show all legends including curves
-            return true;
-          },
-          usePointStyle: true,
-          pointStyle: 'line',
-          padding: 20,
-          font: {
-            size: 11
-          }
-        },
-        onClick: (e, legendItem, legend) => {
-          // Prevent hiding of curve lines when clicked
-          const index = legendItem.datasetIndex;
-          const meta = legend.chart.getDatasetMeta(index);
-          
-          // Allow toggling for force line (index 0), but not for curves
-          if (index === 0) {
-            meta.hidden = meta.hidden === null ? !legend.chart.data.datasets[index].hidden : null;
-            legend.chart.update();
-          }
-        }
+        position: "top",
+        labels: { usePointStyle: true, pointStyle: "line", color: "#374151", font: { size: 12 } },
       },
-      
       tooltip: {
-        mode: "index",
-        intersect: false,
-        backgroundColor: "rgba(0, 0, 0, 0.7)",
-        titleColor: "#fff",
-        bodyColor: "#fff",
+        backgroundColor: "rgba(15,23,42,0.85)",
+        titleColor: "#f1f5f9",
+        bodyColor: "#cbd5e1",
         borderColor: "#3b82f6",
         borderWidth: 1,
         cornerRadius: 8,
-        padding: 12,
-        // displayColors: false,
+        padding: 10,
         callbacks: {
-          label: function (context) {
-            const label = context.dataset.label || '';
-
-            // For curve lines, show custom label
-            if (label.includes('Curve')) {
-              const curveLabel = label.split(' ')[1]; // Get curve number
-              return `${label} - Reached: ${reachedCurves[curveLabel] ? 'Yes' : 'No'}`;
-            }
-            
-            // For force line
-            return `Force: ${context.parsed.y.toFixed(2)} mN`;
-          },
-          title: function(context) {
-            return `Distance: ${context[0].parsed.x.toFixed(2)} mm`;
-
-            // Skip label for vertical lines (they're dataset index > 0)
-          //   if (context.datasetIndex > 0) return null;
-          //   return `Force: ${context.parsed.y.toFixed(2)} mN`;
-          // },
-          // title: function (context) {
-          //   return `Distance: ${context[0].parsed.x.toFixed(2)} mm`;
-          // },
-          // Add this to filter out curve line tooltips
-          // filter: function (tooltipItem) {
-          //   // Only show tooltip for the main force line (dataset 0)
-          //   return tooltipItem.datasetIndex === 0;
-          },
+          title: (ctx) => `Distance: ${ctx[0].parsed.x.toFixed(2)} mm`,
+          label: (ctx) => `Force: ${ctx.parsed.y.toFixed(2)} mN`,
         },
       },
     },
@@ -1263,40 +328,16 @@ const ProcessMode = () => {
         type: "linear",
         title: {
           display: true,
-          text: "Distance (mm)",
+          text: "Probe Distance (mm)",
           color: "#6b7280",
-          font: {
-            size: 12,
-            weight: "bold",
-          },
+          font: { size: 12, weight: "bold" },
         },
-        grid: {
-          color: "rgba(229, 231, 235, 0.5)",
-          drawBorder: true,
-          borderColor: "rgba(229, 231, 235, 1)",
-        },
+        grid: { color: "rgba(229,231,235,0.5)" },
         ticks: {
           color: "#6b7280",
-          font: {
-            size: 11,
-          },
+          font: { size: 11 },
           maxTicksLimit: 10,
-          // Add these lines
-          callback: function(value, index, values) {
-            // Add markers for curve distances on x-axis
-            const curveAtThisValue = selectedConfig?.curveDistances 
-              ? Object.values(selectedConfig.curveDistances).includes(value.toString())
-              : false;
-            
-            if (curveAtThisValue) {
-              // return {
-              //   value: value,
-              //   label: `${value}mm ⚑`
-              // };
-              return `${value}mm `;
-            }
-            return `${value}mm`;
-          }
+          callback: (v) => `${v} mm`,
         },
       },
       y: {
@@ -1305,1218 +346,378 @@ const ProcessMode = () => {
           display: true,
           text: "Force (mN)",
           color: "#6b7280",
-          font: {
-            size: 12,
-            weight: "bold",
-          },
+          font: { size: 12, weight: "bold" },
         },
-        grid: {
-          color: "rgba(229, 231, 235, 0.5)",
-          drawBorder: true,
-          borderColor: "rgba(229, 231, 235, 1)",
-        },
+        grid: { color: "rgba(229,231,235,0.5)" },
         ticks: {
           color: "#6b7280",
-          font: {
-            size: 11,
-          },
+          font: { size: 11 },
           maxTicksLimit: 8,
+          callback: (v) => `${v} mN`,
         },
       },
     },
-    elements: {
-      line: {
-        tension: 0, // Disable bezier curves for straight lines
-        borderWidth: 2.5,
-        fill: false,
-      },
-      point: {
-        radius: 0, // Hide points for cleaner look
-        hoverRadius: 5,
-      },
-    },
   };
 
-  const chartConfig = {
-    datasets: [
-      {
-        label: "Force",
-        data: chartData.map((point) => ({ x: point.distance, y: point.force })),
-        borderColor: "#3b82f6",
-        backgroundColor: "rgba(59, 130, 246, 0.1)",
-        fill: false,
-        pointBackgroundColor: "#3b82f6",
-        pointBorderColor: "#fff",
-        pointHoverBackgroundColor: "#fff",
-        pointHoverBorderColor: "#3b82f6",
+  // ── Status badge ──────────────────────────────────────────────────────────────
+  const meta = getStatusMeta(status);
 
-        yAxisID: 'y',
-        xAxisID: 'x',
-      },
-      // ADD CURVE LINES AS SEPARATE DATASETS
-      ...(selectedConfig?.curveDistances
-        ? Object.entries(selectedConfig.curveDistances)
-          // .map(([label, value]) => {
-            .map(([label, value], index) => {
-            const distance = Number(value);
-            if (isNaN(distance)) return null;
-
-            return {
-              // label: `Curve ${label}`,
-              label: `Curve ${label} at ${distance}mm`,
-              data: [
-                {
-                  x: distance,
-                  y:
-                    chartData.length > 0
-                      ? Math.min(0, ...chartData.map((d) => d.force))
-                      : 0,
-                },
-                {
-                  x: distance,
-                  y:
-                    chartData.length > 0
-                      ? (() => {
-                          const maxF = Math.max(...chartData.map((d) => d.force));
-                          return maxF <= 0 ? 100 : maxF;
-                        })()
-                      : 100,
-                },
-              ],
-              borderColor: reachedCurves[label] ? "#ef4444" : "#fbbf24",
-              borderWidth: 2,
-              // borderDash: [4, 4],
-              borderDash: [5, 5],
-              pointRadius: 0,
-              pointHoverRadius: 0,
-              fill: false,
-              showLine: true,
-
-              tension: 0,
-              yAxisID: 'y',
-              xAxisID: 'x',
-              // Add custom properties for tooltip
-              pointStyle: false,
-            };
-          })
-          .filter(Boolean)
-        : []),
-    ],
-  };
-
+  // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen h-screen bg-linear-to-br from-gray-50 to-blue-50 text-gray-900 overflow-hidden flex flex-col">
-      {/* Force Limit Alert Modal */}
-      {showForceLimitAlert && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-md z-100 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-md w-full border border-red-200 overflow-hidden transform animate-in fade-in zoom-in duration-300">
-            <div className="bg-linear-to-r from-red-600 to-rose-700 p-6 flex items-center justify-between text-white">
-              <div className="flex items-center space-x-3">
-                <div className="bg-white/20 p-2 rounded-xl">
-                  <Activity className="w-6 h-6" />
-                </div>
-                <h2 className="text-xl font-bold tracking-tight">
-                  Safety Alert
-                </h2>
-              </div>
-              <button
-                onClick={() => setShowForceLimitAlert(false)}
-                className="p-2 hover:bg-white/20 rounded-lg transition-colors"
-                aria-label="Close"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
+    <div className="min-h-screen h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 text-gray-900 overflow-hidden flex flex-col">
 
-            <div className="p-8 text-center">
-              <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                <Gauge className="w-10 h-10 text-red-600" />
-              </div>
-              <h3 className="text-2xl font-black text-gray-900 mb-2">
-                Force Limit Reached
-              </h3>
-              <p className="text-gray-600 font-medium">
-                The real-time force has reached the user-defined threshold. The
-                process has been paused for safety.
-              </p>
-
-              <div className="mt-8 bg-gray-50 rounded-2xl p-4 border border-gray-100 flex justify-around">
-                <div>
-                  <p className="text-xs text-gray-400 uppercase font-bold tracking-wider mb-1">
-                    Current Force
-                  </p>
-                  <p className="text-xl font-bold text-red-600">
-                    {readData.forceDisplay}
-                  </p>
-                </div>
-                <div className="w-px bg-gray-200 h-10 self-center"></div>
-                <div>
-                  <p className="text-xs text-gray-400 uppercase font-bold tracking-wider mb-1">
-                    Threshold
-                  </p>
-                  <p className="text-xl font-bold text-gray-700">
-                    {selectedConfig?.thresholdForce} mN
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-gray-50 p-6 border-t border-gray-100">
-              <button
-                onClick={() => setShowForceLimitAlert(false)}
-                className="w-full bg-linear-to-r from-red-600 to-rose-700 hover:from-red-700 hover:to-rose-800 text-white font-bold py-4 px-6 rounded-2xl transition-all duration-300 shadow-lg shadow-red-200 hover:-translate-y-0.5 active:translate-y-0"
-              >
-                Close and Acknowledge
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {temperatureStatus.showHeatingDialog && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-gray-200/80">
-            <div
-              className={`p-6 rounded-t-2xl bg-linear-to-r ${parseFloat(readData.temperature) >= 39 ? "from-red-600 to-rose-700" : "from-orange-500 to-red-500"}`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <Flame className="w-6 h-6 text-white" />
-                  <h2 className="text-xl font-bold text-white">
-                    {parseFloat(readData.temperature) >= 39
-                      ? "Temperature Alert"
-                      : temperatureStatus.isHeatingActive
-                        ? "Heating In Progress"
-                        : "Heating Required"}
-                  </h2>
-                </div>
-                <button
-                  onClick={closeHeatingDialog}
-                  className="p-2 hover:bg-white/20 rounded-lg transition-all"
-                >
-                  <X className="w-6 h-6 text-white" />
-                </button>
-              </div>
-            </div>
-
-            <div className="p-6">
-              <div className="bg-gray-50 rounded-xl p-4 mb-4 border border-gray-200">
-                <div className="grid grid-cols-2 gap-4 text-center">
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">
-                      Real-time Temperature
-                    </p>
-                    <div className="flex items-center justify-center space-x-2">
-                      <Thermometer className="w-5 h-5 text-blue-600" />
-                      <p
-                        className={`text-2xl font-bold ${parseFloat(readData.temperature) >= 39 ? "text-red-700" : "text-blue-700"}`}
-                      >
-                        {readData.temperatureDisplay}
-                      </p>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm text-gray-600 mb-1">Valid Range</p>
-                    <div className="flex items-center justify-center space-x-2">
-                      <Flame className="w-5 h-5 text-orange-600" />
-                      <p className="text-2xl font-bold text-orange-700">
-                        35 - 39°C
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  {/* Simplified Progress Bar or Range Indicator */}
-                  <div className="flex justify-between text-xs text-gray-500 mb-1">
-                    <span>Low (35°C)</span>
-                    <span>Range</span>
-                    <span>High (39°C)</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-2 relative">
-                    {/* Marker for current temp */}
-                    {(() => {
-                      const temp = parseFloat(readData.temperature);
-                      let left = 0;
-                      let color = "bg-blue-500";
-                      if (!isNaN(temp)) {
-                        // Map 30-45 range to 0-100%
-                        const min = 30;
-                        const max = 45;
-                        const pct = Math.max(
-                          0,
-                          Math.min(100, ((temp - min) / (max - min)) * 100),
-                        );
-                        left = pct;
-                        if (temp > 35 && temp < 39) color = "bg-green-500";
-                        else if (temp >= 39) color = "bg-red-500";
-                        else color = "bg-orange-500";
-                      }
-                      return (
-                        <div
-                          className={`absolute top-0 bottom-0 w-3 h-3 rounded-full -mt-0.5 border-2 border-white shadow ${color}`}
-                          style={{ left: `calc(${left}% - 6px)` }}
-                        />
-                      );
-                    })()}
-                    {/* Green Zone Marker */}
-                    <div
-                      className="absolute top-0 h-2 bg-green-500/20 left-[33%] width-[26%]"
-                      style={{
-                        left: `${((35 - 30) / 15) * 100}%`,
-                        width: `${((39 - 35) / 15) * 100}%`,
-                      }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex space-x-3">
-                {parseFloat(readData.temperature) < 39 &&
-                  (!temperatureStatus.isHeatingActive ? (
-                    <button
-                      onClick={turnOnHeater}
-                      disabled={temperatureStatus.heaterButtonDisabled}
-                      className={`flex-1 font-bold py-3 px-4 rounded-xl transition-all flex items-center justify-center space-x-2 ${temperatureStatus.heaterButtonDisabled
-                          ? "bg-gray-400 cursor-not-allowed text-gray-200"
-                          : "bg-linear-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-lg"
-                        }`}
-                    >
-                      <Flame className="w-5 h-5" />
-                      <span>
-                        {temperatureStatus.heaterButtonDisabled
-                          ? "Turning ON..."
-                          : "Turn ON Heater"}
-                      </span>
-                    </button>
-                  ) : (
-                    <div className="w-full bg-green-50 border border-green-200 rounded-xl p-4">
-                      <div className="flex items-center justify-center space-x-2">
-                        <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                          <Flame className="w-3 h-3 text-white" />
-                        </div>
-                        <p className="text-green-700 font-bold">Heater is ON</p>
-                      </div>
-                      <p className="text-green-600 text-center text-sm mt-1">
-                        Waiting for temperature to rise above 35°C...
-                      </p>
-                    </div>
-                  ))}
-                {parseFloat(readData.temperature) >= 39 && (
-                  <div className="w-full bg-red-50 border border-red-200 rounded-xl p-4">
-                    <div className="flex items-center justify-center space-x-2">
-                      <Thermometer className="w-6 h-6 text-red-500" />
-                      <p className="text-red-700 font-bold">Cooling Required</p>
-                    </div>
-                    <p className="text-red-600 text-center text-sm mt-1">
-                      System is waiting for natural cooling.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="mt-4 text-center">
-                <p className="text-gray-500 text-sm">
-                  Process start is disabled until temperature is between 35°C
-                  and 39°C.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* {showInfoModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-            <div className="sticky top-0 bg-linear-to-r from-blue-500 to-cyan-500 p-6 rounded-t-2xl flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <Info className="w-6 h-6 text-white" />
-                <h2 className="text-2xl font-bold text-white">
-                  Pre-Process Checklist
-                </h2>
-              </div>
-              <button
-                onClick={() => setShowInfoModal(false)}
-                className="p-2 hover:bg-white/20 rounded-lg transition-all"
-              >
-                <X className="w-6 h-6 text-white" />
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div className="bg-red-50 border-l-4 border-red-500 p-4 rounded-r-lg">
-                <h3 className="font-bold text-red-900 mb-2 flex items-center space-x-2">
-                  <span className="text-xl">⚠️</span>
-                  <span>CRITICAL: Before Starting Process</span>
-                </h3>
-                <ul className="space-y-2 text-red-800">
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Serial Connection:</strong> Verify "CONNECTED"
-                      status is shown in green.
-                    </span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Status READY:</strong> System must be in READY
-                      state before starting.
-                    </span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
-                <h3 className="font-bold text-blue-900 mb-2 flex items-center space-x-2">
-                  <span className="text-xl">🔧</span>
-                  <span>Equipment & Safety Checks</span>
-                </h3>
-                <ul className="space-y-2 text-blue-800">
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Machine Position:</strong> Ensure machine is at
-                      home position (Distance = 0.0 mm)
-                    </span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Sample Placement:</strong> Verify sample is
-                      properly positioned and secured.
-                    </span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="bg-green-50 border-l-4 border-green-500 p-4 rounded-r-lg">
-                <h3 className="font-bold text-green-900 mb-2 flex items-center space-x-2">
-                  <span className="text-xl">📊</span>
-                  <span>Sensor Verification</span>
-                </h3>
-                <ul className="space-y-2 text-green-800">
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Temperature Reading:</strong> Check temperature
-                      sensor shows valid readings.
-                    </span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Force Sensor:</strong> Verify force reading is at
-                      baseline (near 0 mN).
-                    </span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-r-lg">
-                <h3 className="font-bold text-yellow-900 mb-2 flex items-center space-x-2">
-                  <span className="text-xl">🎯</span>
-                  <span>Process Parameters</span>
-                </h3>
-                <ul className="space-y-2 text-yellow-800">
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Distance:</strong> Verify matches your test
-                      requirements.
-                    </span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Peak Force:</strong> Confirm safety threshold is
-                      set correctly (in mN).
-                    </span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Temperature:</strong> Ensure temperature setting
-                      is appropriate.
-                    </span>
-                  </li>
-                </ul>
-              </div>
-
-              <div className="bg-purple-50 border-l-4 border-purple-500 p-4 rounded-r-lg">
-                <h3 className="font-bold text-purple-900 mb-2 flex items-center space-x-2">
-                  <span className="text-xl">⚡</span>
-                  <span>During Process</span>
-                </h3>
-                <ul className="space-y-2 text-purple-800">
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Monitor Graph:</strong> Watch real-time
-                      force-distance plot for anomalies.
-                    </span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>STOP Function:</strong> Use STOP button if any
-                      issues are observed.
-                    </span>
-                  </li>
-                  <li className="flex items-start space-x-2">
-                    <span className="font-bold mt-1">•</span>
-                    <span>
-                      <strong>Stay Present:</strong> Never leave the machine
-                      unattended during operation.
-                    </span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-            <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-2xl border-t border-gray-200">
-              <button
-                onClick={() => setShowInfoModal(false)}
-                className="w-full bg-linear-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-bold py-3 px-6 rounded-xl transition-all"
-              >
-                I Understand - Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )} */}
+      {/* ── Info Modal ─────────────────────────────────────────────────────────── */}
       {showInfoModal && (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-        <div className="bg-white rounded-2xl lg:rounded-3xl shadow-2xl max-w-md lg:max-w-lg w-full max-h-[80vh] overflow-hidden">
-          <div className="bg-linear-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-blue-100">
-            <div className="flex items-center justify-between">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full max-h-[80vh] overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-6 py-4 border-b border-blue-100 flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <div className="p-2 bg-blue-100 rounded-lg">
-                  <Info className="w-5 h-5 lg:w-6 lg:h-6 text-blue-600" />
+                  <Info className="w-5 h-5 text-blue-600" />
                 </div>
-                <h3 className="text-lg lg:text-xl font-bold text-blue-900">Operation Guidlines</h3>
+                <h3 className="text-lg font-bold text-blue-900">Operation Guidelines</h3>
               </div>
-              <button
-                onClick={() => setShowInfoModal(false)}
-                className="p-2 hover:bg-blue-100 rounded-lg transition-colors"
-              >
+              <button onClick={() => setShowInfoModal(false)} className="p-2 hover:bg-blue-100 rounded-lg transition-colors">
                 <X className="w-5 h-5 text-blue-600" />
               </button>
             </div>
-          </div>
-
-          <div className="p-6 overflow-y-auto max-h-96">
-            <div className="space-y-4">
-              <div className="space-y-3">
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Serial Connection:</span> Verify "CONNECTED"
-                  status is shown in green.
+            <div className="p-6 overflow-y-auto space-y-3">
+              {[
+                ["Serial Connection", "Verify \"CONNECTED\" status is shown."],
+                ["Status READY", "System must be in READY / IDLE state before starting."],
+                ["Machine Position", "Ensure machine is at home position (Distance = 0.0 mm)."],
+                ["Sample Placement", "Verify sample is properly positioned and secured."],
+                ["Force Sensor", "Verify force reading is at baseline (near 0 mN)."],
+                ["Monitor Graph", "Watch real-time Force vs Probe Distance plot for anomalies."],
+                ["STOP (Pause)", "Use PAUSE button if any issues are observed."],
+                ["Stay Present", "Never leave the machine unattended during operation."],
+              ].map(([title, body]) => (
+                <div key={title} className="flex items-start space-x-3">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0" />
+                  <p className="text-blue-800 text-sm">
+                    <span className="font-semibold">{title}:</span> {body}
                   </p>
                 </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Status READY:</span> System must be in READY
-                  state before starting.
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Machine Position:</span> Ensure machine is at
-                  home position (Distance = 0.0 mm)
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Sample Placement:</span>  Verify sample is
-                  properly positioned and secured.
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Temperature Reading:</span> Check temperature
-                  sensor shows valid readings.
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Force Sensor:</span> Verify force reading is at
-                  baseline (near 0 mN).
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Distance:</span> Verify matches your test
-                  requirements.
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Peak Force:</span> Confirm safety threshold is
-                  set correctly (in mN).
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Temperature:</span> Ensure temperature setting
-                  is appropriate.
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Monitor Graph:</span> Watch real-time
-                  force-distance plot for anomalies.
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">STOP Function:</span> Use STOP button if any
-                  issues are observed.
-                  </p>
-                </div>
-                <div className="flex items-start space-x-3">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
-                  <p className="text-blue-800 text-sm lg:text-base">
-                    <span className="font-semibold">Stay Present:</span> Never leave the machine
-                  unattended during operation.
-                  </p>
-                </div>
-                {/* <div className="sticky bottom-0 bg-gray-50 p-4 rounded-b-2xl border-t border-gray-200">
-                <button
-                    onClick={() => setShowInfoModal(false)}
-                    className="w-full bg-linear-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white font-bold py-3 px-6 rounded-xl transition-all"
-                >
-                    I Understand - Close
-                </button>
-                </div> */}
-              </div>
+              ))}
             </div>
           </div>
         </div>
-      </div>
       )}
 
-      <div
-        className={`${isXlScreen ? "hidden" : "fixed"} top-0 right-0 h-auto w-[90vw] max-w-sm bg-white/95 backdrop-blur-xl shadow-2xl z-40 transform transition-transform duration-300 ${showConfigPanel ? "translate-x-0" : "translate-x-full"
-          }`}
-      >
-        <div className="p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold text-gray-900">Configuration</h3>
-            <button
-              onClick={() => setShowConfigPanel(false)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-all"
-            >
-              <X className="w-5 h-5 text-gray-600" />
-            </button>
+      {/* ── Config slide-in panel (small screens) ──────────────────────────────── */}
+      {!isXl && (
+        <div
+          className={`fixed top-0 right-0 h-full w-72 bg-white/95 backdrop-blur-xl shadow-2xl z-40 transform transition-transform duration-300 ${showConfigPanel ? "translate-x-0" : "translate-x-full"}`}
+        >
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-base font-bold text-gray-900">Active Configuration</h3>
+              <button onClick={() => setShowConfigPanel(false)} className="p-2 hover:bg-gray-100 rounded-lg transition-all">
+                <X className="w-5 h-5 text-gray-600" />
+              </button>
+            </div>
+            <ConfigDetails config={selectedConfig} is3Point={is3Point} liveData={liveData} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Header ─────────────────────────────────────────────────────────────── */}
+      <header className="shrink-0 bg-white/80 backdrop-blur-xl border-b border-gray-200/80 shadow-sm">
+        <div className={`${isXl ? "px-6 py-4" : isLg ? "px-4 py-3" : "px-3 py-2.5"} flex items-center justify-between`}>
+          <div className="flex items-center space-x-3 min-w-0">
+            <div className="min-w-0">
+              <h1 className={`${isXl ? "text-2xl" : "text-xl"} font-bold bg-gradient-to-r from-gray-900 to-blue-700 bg-clip-text text-transparent truncate`}>
+                Process Mode
+              </h1>
+              {selectedConfig && (
+                <p className="text-blue-600 text-xs mt-0.5 font-medium truncate hidden sm:block">
+                  {selectedConfig.testType === "3-point" ? "3-Point Test" : "2-Point Test"} — {selectedConfig.configName}
+                </p>
+              )}
+            </div>
           </div>
 
-          {selectedConfig ? (
-            <div className="space-y-3">
-              <div className="bg-linear-to-r from-blue-50 to-cyan-50 p-3 rounded-xl border border-blue-200/50">
-                <p className="text-gray-600 text-xs mb-1">Configuration Name</p>
-                <p className="text-sm font-bold text-blue-700">
-                  {selectedConfig.configName}
-                </p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-linear-to-br from-green-50 to-emerald-50 p-3 rounded-xl border border-green-200/50">
-                  <p className="text-gray-600 text-xs mb-1">Distance</p>
-                  <p className="text-sm font-bold text-green-700">
-                    {selectedConfig.pathlength} mm
-                  </p>
-                </div>
-
-                <div className="bg-linear-to-br from-cyan-50 to-blue-50 p-3 rounded-xl border border-cyan-200/50">
-                  <p className="text-gray-600 text-xs mb-1">Threshold Force</p>
-                  <p className="text-sm font-bold text-blue-700">
-                    {selectedConfig.thresholdForce} mN
-                  </p>
-                </div>
-
-                <div className="col-span-2 bg-linear-to-br from-orange-50 to-red-50 p-3 rounded-xl border border-orange-200/50">
-                  <p className="text-gray-600 text-xs mb-1">
-                    Insertion Stroke Length
-                  </p>
-                  <p className="text-sm font-bold text-orange-700">
-                    {selectedConfig.insertionLength} mm
-                  </p>
-                </div>
-                <div className="col-span-2 bg-linear-to-br from-orange-50 to-red-50 p-3 rounded-xl border border-orange-200/50">
-                  <p className="text-gray-600 text-xs mb-1">
-                    Retraction Stroke Length
-                  </p>
-                  <p className="text-sm font-bold text-orange-700">
-                    {selectedConfig.retractionLength} mm
-                  </p>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded-r-xl">
-              <p className="text-yellow-800 text-sm font-medium">
-                ⚠️ No configuration selected
-              </p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <header className="shrink-0 relative bg-white/80 backdrop-blur-xl border-b border-gray-200/80 shadow-lg">
-        <div
-          className={`${isXlScreen ? "px-6 py-4" : isLgScreen ? "px-4 py-3" : "px-3 py-2"}`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 sm:space-x-6 min-w-0">
-              <div className="flex items-center space-x-2 sm:space-x-4 min-w-0">
-                <div className="min-w-0">
-                  <h1
-                    className={`${isXlScreen ? "text-2xl" : isLgScreen ? "text-xl" : "text-lg"} font-bold bg-linear-to-r from-gray-900 to-blue-700 bg-clip-text text-transparent truncate`}
-                  >
-                    Process Mode
-                  </h1>
-                  <p className="text-gray-600 text-xs sm:text-sm mt-0.5 truncate hidden sm:block">
-                    Process Mode - Real-time Monitoring
-                  </p>
-                  {selectedConfig && (
-                    <p className="text-blue-600 text-xs sm:text-sm mt-0.5 font-medium truncate hidden lg:block">
-                      Using configuration: {selectedConfig.configName}
-                    </p>
-                  )}
-                </div>
-              </div>
+          <div className="flex items-center space-x-2 shrink-0">
+            {/* Connection badge */}
+            <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-medium text-xs border ${isConnected ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+              <Usb className="w-4 h-4" />
+              <span className="hidden sm:inline">{isConnected ? "USB CONNECTED" : "USB DISCONNECTED"}</span>
             </div>
 
-            <div className="flex items-center space-x-1 sm:space-x-3 shrink-0">
-              <div
-                className={`flex items-center space-x-1 sm:space-x-2 px-2 sm:px-4 py-1 sm:py-2 rounded-xl font-medium transition-all ${isConnected
-                    ? "bg-green-50 text-green-700 border border-green-200 shadow-sm shadow-green-500/10"
-                    : "bg-red-50 text-red-700 border border-red-200 shadow-sm shadow-red-500/10"
-                  }`}
-              >
-                <Usb className={`${isXlScreen ? "w-5 h-5" : "w-4 h-4"}`} />
-                <span className="text-xs sm:text-sm font-semibold hidden sm:inline">
-                  {isConnected ? "USB CONNECTED" : "USB DISCONNECTED"}
-                </span>
-              </div>
-
-              {!isConnected && (
-                <button
-                  onClick={handleReconnect}
-                  className="px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors hidden sm:block"
-                  title="Attempt to reconnect USB"
-                >
-                  Reconnect
-                </button>
-              )}
-
-              <button
-                onClick={() => setShowInfoModal(true)}
-                className="group bg-linear-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white rounded-xl w-8 h-8 sm:w-12 sm:h-12 lg:w-14 lg:h-14 flex items-center justify-center transition-all duration-300 hover:-translate-y-1 shadow-xl hover:shadow-2xl border border-blue-400/30"
-              >
-                <Info
-                  className={`${isXlScreen ? "w-7 h-7" : "w-5 h-5"} group-hover:scale-110 transition-transform duration-300`}
-                />
+            {!isConnected && (
+              <button onClick={handleReconnect} className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors hidden sm:block">
+                Reconnect
               </button>
+            )}
 
+            {/* Info button */}
+            <button
+              onClick={() => setShowInfoModal(true)}
+              className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white rounded-xl w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center transition-all duration-200 hover:-translate-y-0.5 shadow-lg border border-blue-400/30"
+            >
+              <Info className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
+
+            {/* Config panel trigger (small screens) */}
+            {!isXl && (
               <button
-                onClick={() => {
-                  const confirmed = window.confirm(
-                    "Are you sure you want to exit?",
-                  );
-                  if (confirmed) {
-                    window.close();
-                  }
-                }}
-                disabled={shouldDisablePowerButton()}
-                className={`group rounded-xl lg:rounded-2xl w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 flex items-center justify-center transition-all duration-300 shadow-lg border ${shouldDisablePowerButton()
-                    ? "bg-gray-200 cursor-not-allowed text-gray-400 border-gray-300"
-                    : "bg-linear-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white hover:-translate-y-1 hover:shadow-xl border-red-400/30"
-                  }`}
+                onClick={() => setShowConfigPanel(true)}
+                className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center transition-all hover:-translate-y-0.5 shadow-lg border border-indigo-400/30"
+                title="View configuration"
               >
-                <Power
-                  className={`w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 transition-transform duration-300 ${shouldDisablePowerButton() ? "" : "group-hover:scale-110"
-                    }`}
-                />
+                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
-            </div>
+            )}
+
+            {/* Power / Exit */}
+            <button
+              onClick={() => {
+                if (window.confirm("Are you sure you want to exit?")) window.close();
+              }}
+              disabled={!SAFE_STATUSES.has(status)}
+              className={`rounded-xl w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center transition-all duration-200 shadow-lg border ${!SAFE_STATUSES.has(status)
+                ? "bg-gray-200 cursor-not-allowed text-gray-400 border-gray-300"
+                : "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white hover:-translate-y-0.5 hover:shadow-xl border-red-400/30"
+              }`}
+            >
+              <Power className="w-4 h-4 sm:w-5 sm:h-5" />
+            </button>
           </div>
         </div>
       </header>
 
-      {!isXlScreen && (
-        <div className="fixed z-30">
-          <button
-            onMouseDown={(e) => {
-              setIsDraggingConfig(true);
-              setDragOffset({
-                x: e.clientX - configButtonPos.x,
-                y: e.clientY - configButtonPos.y,
-              });
-            }}
-            onTouchStart={(e) => {
-              if (e.touches.length > 0) {
-                setIsDraggingConfig(true);
-                setDragOffset({
-                  x: e.touches[0].clientX - configButtonPos.x,
-                  y: e.touches[0].clientY - configButtonPos.y,
-                });
-              }
-            }}
-            onClick={(e) => {
-              if (!isDraggingConfig) {
-                setShowConfigPanel(!showConfigPanel);
-              }
-              e.stopPropagation();
-            }}
-            style={{
-              position: "fixed",
-              left: `${configButtonPos.x}px`,
-              top: `${configButtonPos.y}px`,
-              cursor: isDraggingConfig ? "grabbing" : "grab",
-              touchAction: "none",
-            }}
-            className="bg-linear-to-br from-purple-500 to-indigo-500 text-white p-3 rounded-xl shadow-xl hover:shadow-2xl transition-all"
-          >
-            <Info className="w-5 h-5" />
-          </button>
-        </div>
-      )}
+      {/* ── Main layout ───────────────────────────────────────────────────────── */}
+      <main className={`relative flex ${isXl ? "flex-row" : "flex-col"} flex-1 ${isXl ? "gap-5 p-5" : isLg ? "gap-4 p-4" : "gap-3 p-3"} min-h-0 overflow-hidden`}>
 
-      <main
-        className={`relative flex ${isXlScreen ? "flex-row" : "flex-col"} flex-1 ${isXlScreen ? "gap-6 p-6" : isLgScreen ? "gap-4 p-4" : "gap-3 p-3"} min-h-0 overflow-hidden`}
-      >
-        <section
-          className={`flex-1 flex flex-col ${isXlScreen ? "gap-6" : "gap-4"} min-w-0 min-h-0`}
-        >
-          <div className="flex-1 bg-white/70 backdrop-blur-xl rounded-xl sm:rounded-2xl border border-gray-200/80 p-3 sm:p-4 shadow-xl shadow-gray-200/50 flex flex-col">
-            <div className="mb-2 sm:mb-2 shrink-0">
-              <div className="flex items-center">
-                <span
-                  className={`${isXlScreen ? "text-md" : "text-base"} font-bold text-gray-900 mr-2`}
-                >
-                  Real-time Analytics
-                </span>
-                <span
-                  className={`${isXlScreen ? "text-sm" : "text-xs"} text-gray-500 mr-2`}
-                >
-                  (Force & Distance vs Time)
-                </span>
-              </div>
+        {/* ── Left / main column ─────────────────────────────────────────────── */}
+        <section className={`flex-1 flex flex-col ${isXl ? "gap-5" : "gap-3"} min-w-0 min-h-0`}>
+
+          {/* Status Bar */}
+          <div className={`shrink-0 bg-white/70 backdrop-blur-xl rounded-xl border border-gray-200/80 shadow-lg ${isXl ? "px-5 py-3" : "px-4 py-2.5"} flex items-center justify-between`}>
+            <div className="flex items-center space-x-3">
+              <div className={`w-2.5 h-2.5 rounded-full ${meta.dot}`} />
+              <span className="text-xs text-gray-500 font-medium uppercase tracking-wider">Machine Status</span>
+              <span className={`text-sm font-bold ${meta.color}`}>{status}</span>
             </div>
+            <div className="flex items-center space-x-3">
+              {isLogging && (
+                <span className="flex items-center space-x-1.5 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <span>LOGGING</span>
+                </span>
+              )}
+              {selectedConfig && (
+                <span className="text-xs text-gray-400 hidden md:block">
+                  Config: <span className="font-semibold text-gray-600">{selectedConfig.configName}</span>
+                </span>
+              )}
+            </div>
+          </div>
 
-            {!isXlScreen && (
-              <div className="mb-3 grid grid-cols-2 gap-2 shrink-0">
-                {/* Temperature box */}
-                <div className="bg-linear-to-br from-orange-50 to-red-50 rounded-lg border border-orange-200/50 p-2">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <div className="w-6 h-6 bg-linear-to-br from-orange-500 to-red-500 rounded-md flex items-center justify-center">
-                      <Thermometer className="w-3 h-3 text-white" />
-                    </div>
-                    <p className="text-gray-600 text-xs font-medium">
-                      Temperature
-                    </p>
-                  </div>
-                  <p className="text-sm font-bold text-orange-600">
-                    {readData.temperatureDisplay}
-                  </p>
-                </div>
+          {/* Live Telemetry tiles (small screens — above graph) */}
+          {!isXl && (
+            <div className={`shrink-0 grid gap-2 ${is3Point ? "grid-cols-4" : "grid-cols-3"}`}>
+              <TeleTile label="Catheter Dist." value={liveData.catheterDistance} unit="mm" colorClass="from-violet-500 to-indigo-500" bgClass="from-violet-50 to-indigo-50 border-violet-200/60" textClass="text-violet-700" />
+              <TeleTile label="Probe Dist."    value={liveData.probeDistance}    unit="mm" colorClass="from-green-500 to-emerald-500" bgClass="from-green-50 to-emerald-50 border-green-200/60"   textClass="text-green-700"  />
+              <TeleTile label="Force"          value={liveData.force}            unit="mN" colorClass="from-cyan-500 to-blue-500"     bgClass="from-cyan-50 to-blue-50 border-cyan-200/60"       textClass="text-blue-700"   />
+              {is3Point && (
+                <TeleTile label="Steps (R72)" value={liveData.stepsToMove} unit="" colorClass="from-orange-500 to-amber-500" bgClass="from-orange-50 to-amber-50 border-orange-200/60" textClass="text-orange-700" />
+              )}
+            </div>
+          )}
 
-                {/* Force box */}
-                <div className="bg-linear-to-br from-cyan-50 to-blue-50 rounded-lg border border-cyan-200/50 p-2">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <div className="w-6 h-6 bg-linear-to-br from-cyan-500 to-blue-500 rounded-md flex items-center justify-center">
-                      <Gauge className="w-3 h-3 text-white" />
-                    </div>
-                    <p className="text-gray-600 text-xs font-medium">Force</p>
-                  </div>
-                  <p className="text-sm font-bold text-blue-600">
-                    {readData.forceDisplay}
-                  </p>
-                </div>
-
-                {/* Distance box */}
-                <div className="bg-linear-to-br from-green-50 to-emerald-50 rounded-lg border border-green-200/50 p-2">
-                  <div className="flex items-center space-x-2 mb-1">
-                    <div className="w-6 h-6 bg-linear-to-br from-green-500 to-emerald-500 rounded-md flex items-center justify-center">
-                      <Ruler className="w-3 h-3 text-white" />
-                    </div>
-                    <p className="text-gray-600 text-xs font-medium">
-                      Distance
-                    </p>
-                  </div>
-                  <p className="text-sm font-bold text-green-600">
-                    {readData.distanceDisplay}
-                  </p>
-                </div>
-
-                {/* Status box */}
-                <div className="bg-linear-to-br from-blue-50 to-indigo-50 rounded-lg border border-blue-200/50 p-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <div className="flex items-center space-x-2">
-                      <div
-                        className={`w-6 h-6 rounded-md flex items-center justify-center ${sensorData.status === "INSERTION" ||
-                            sensorData.status === "RETRACTION"
-                            ? "bg-linear-to-br from-green-500 to-emerald-500"
-                            : sensorData.status === "PAUSED" ||
-                              sensorData.status === "RETRACTION PAUSED"
-                              ? "bg-linear-to-br from-yellow-500 to-orange-500"
-                              : sensorData.status === "HOMING"
-                                ? "bg-linear-to-br from-purple-500 to-indigo-500"
-                                : sensorData.status === "READY" ||
-                                  sensorData.status === "INSERTION COMPLETED"
-                                  ? "bg-linear-to-br from-blue-500 to-indigo-500"
-                                  : "bg-linear-to-br from-gray-400 to-gray-500"
-                          }`}
-                      >
-                        <Activity className="w-3 h-3 text-white" />
-                      </div>
-                      <p className="text-gray-600 text-xs font-medium">
-                        Status
-                      </p>
-                    </div>
-                    <div
-                      className={`w-2 h-2 rounded-full ${sensorData.status === "INSERTION" ||
-                          sensorData.status === "RETRACTION"
-                          ? "bg-green-500 animate-pulse"
-                          : sensorData.status === "PAUSED" ||
-                            sensorData.status === "RETRACTION PAUSED"
-                            ? "bg-yellow-500"
-                            : sensorData.status === "HOMING"
-                              ? "bg-purple-500 animate-pulse"
-                              : sensorData.status === "READY" ||
-                                sensorData.status === "INSERTION COMPLETED"
-                                ? "bg-blue-500"
-                                : "bg-gray-400"
-                        }`}
-                    ></div>
-                  </div>
-                  <p
-                    className={`text-sm font-bold ${sensorData.status === "INSERTION" ||
-                        sensorData.status === "RETRACTION"
-                        ? "text-green-600"
-                        : sensorData.status === "PAUSED" ||
-                          sensorData.status === "RETRACTION PAUSED"
-                          ? "text-yellow-600"
-                          : sensorData.status === "HOMING"
-                            ? "text-purple-600"
-                            : sensorData.status === "READY" ||
-                              sensorData.status === "INSERTION COMPLETED"
-                              ? "text-blue-600"
-                              : "text-gray-600"
-                      }`}
-                  >
-                    {sensorData.status}
-                  </p>
-                </div>
+          {/* Chart */}
+          <div className="flex-1 bg-white/70 backdrop-blur-xl rounded-xl border border-gray-200/80 shadow-xl flex flex-col p-3 sm:p-4 min-h-0">
+            <div className="flex items-center justify-between mb-2 shrink-0">
+              <div>
+                <span className={`${isXl ? "text-base" : "text-sm"} font-bold text-gray-900`}>
+                  Force vs Probe Distance
+                </span>
+                <span className="text-xs text-gray-400 ml-2">Real-time</span>
               </div>
-            )}
-
-            {/* Responsive chart container - FIXED HEIGHTS FOR ALL SCREENS */}
-            <div
-              className="grow"
-              // style={{
-              //   minHeight: "250px",
-              //   height: isSmScreen
-              //     ? "250px"
-              //     : isMdScreen
-              //       ? "300px"
-              //       : isLgScreen
-              //         ? "350px"
-              //         : "400px",
-              //   maxHeight: "400px",
-              // }}
-              style={{
-                minHeight: isXlScreen ? "650px" : "250px",
-                height: isSmScreen
-                  ? "250px"
-                  : isMdScreen
-                    ? "300px"
-                    : isLgScreen
-                      ? "400px"
-                      : isXlScreen
-                        ? "700px"
-                        : "400px",
-                maxHeight: isXlScreen ? "750px" : "400px",
-                width: "100%",
-              }}
-            >
+              {chartData.length > 0 && (
+                <span className="text-xs text-gray-400">{chartData.length} pts</span>
+              )}
+            </div>
+            <div className="flex-1 min-h-0" style={{ minHeight: isXl ? "500px" : "220px" }}>
               <Line data={chartConfig} options={chartOptions} redraw={false} />
             </div>
           </div>
         </section>
 
-        <section
-          className={`${isXlScreen ? "w-1/3" : "w-full"} flex flex-col ${isXlScreen ? "gap-6" : "gap-4"} pb-20 xl:pb-0 min-h-0`}
-        >
-          {isXlScreen && (
-            <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-4 shadow-xl shadow-gray-200/50 shrink-0">
-              <div className="mb-2">
-                <h3 className="text-lg font-bold text-gray-900">
-                  Active Configuration
-                </h3>
-                <p className="text-gray-600 text-xs">
-                  Current process parameters
-                </p>
-              </div>
+        {/* ── Right sidebar (xl screens) ─────────────────────────────────────── */}
+        {isXl && (
+          <section className="w-80 flex flex-col gap-5 min-h-0">
 
-              {selectedConfig ? (
-                <div className="space-y-2.5">
-                  <div className="bg-linear-to-r from-blue-50 to-cyan-50 p-3 rounded-xl border border-blue-200/50">
-                    <p className="text-gray-600 text-xs mb-0.5">
-                      Configuration Name
-                    </p>
-                    <p className="text-base font-bold text-blue-700">
-                      {selectedConfig.configName}
-                    </p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div className="bg-linear-to-br from-green-50 to-emerald-50 p-3 rounded-xl border border-green-200/50">
-                      <p className="text-gray-600 text-xs mb-0.5">Distance</p>
-                      <p className="text-base font-bold text-green-700">
-                        {selectedConfig.pathlength} mm
-                      </p>
-                    </div>
-
-                    <div className="bg-linear-to-br from-cyan-50 to-blue-50 p-3 rounded-xl border border-cyan-200/50">
-                      <p className="text-gray-600 text-xs mb-0.5">
-                        Threshold Force
-                      </p>
-                      <p className="text-base font-bold text-blue-700">
-                        {selectedConfig.thresholdForce} mN
-                      </p>
-                    </div>
-
-                    <div className="col-span-2 bg-linear-to-br from-orange-50 to-red-50 p-3 rounded-xl border border-orange-200/50">
-                      <p className="text-gray-600 text-xs mb-0.5">
-                        Insertion Stroke Length
-                      </p>
-                      <p className="text-base font-bold text-orange-700">
-                        {selectedConfig.insertionLength} mm
-                      </p>
-                    </div>
-                    <div className="col-span-2 bg-linear-to-br from-orange-50 to-red-50 p-3 rounded-xl border border-orange-200/50">
-                      <p className="text-gray-600 text-xs mb-0.5">
-                        Retraction Stroke Length
-                      </p>
-                      <p className="text-base font-bold text-orange-700">
-                        {selectedConfig.retractionLength} mm
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="bg-yellow-50 border-l-4 border-yellow-500 p-3 rounded-r-xl">
-                  <p className="text-yellow-800 font-medium text-sm">
-                    ⚠️ No configuration selected
-                  </p>
-                  <p className="text-yellow-700 text-xs mt-1">
-                    Please load a configuration to proceed
-                  </p>
-                </div>
-              )}
+            {/* Config card */}
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-4 shadow-xl shrink-0">
+              <h3 className="text-base font-bold text-gray-900 mb-3">Active Configuration</h3>
+              <ConfigDetails config={selectedConfig} is3Point={is3Point} liveData={liveData} />
             </div>
-          )}
 
-          {isXlScreen && (
-            <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-4 shadow-xl shadow-gray-200/50 flex-1 min-h-0">
-              <div className="mb-3">
-                <h3 className="text-lg font-bold text-gray-900">
-                  Real-time Sensors
-                </h3>
-                <p className="text-gray-600 text-xs">Live monitoring data</p>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-linear-to-br from-orange-50 to-red-50 rounded-xl border border-orange-200/50 p-3">
-                  <div className="flex items-center space-x-2 mb-1.5">
-                    <div className="w-8 h-8 bg-linear-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center shadow-sm">
-                      <Thermometer className="w-4 h-4 text-white" />
-                    </div>
-                    <p className="text-gray-600 text-xs font-medium">
-                      Temperature
-                    </p>
-                  </div>
-                  <p className="text-xl font-bold text-orange-600">
-                    {readData.temperatureDisplay}
-                  </p>
-                </div>
-
-                <div className="bg-linear-to-br from-cyan-50 to-blue-50 rounded-xl border border-cyan-200/50 p-3">
-                  <div className="flex items-center space-x-2 mb-1.5">
-                    <div className="w-8 h-8 bg-linear-to-br from-cyan-500 to-blue-500 rounded-lg flex items-center justify-center shadow-sm">
-                      <Gauge className="w-4 h-4 text-white" />
-                    </div>
-                    <p className="text-gray-600 text-xs font-medium">Force</p>
-                  </div>
-                  <p className="text-xl font-bold text-blue-600">
-                    {readData.forceDisplay}
-                  </p>
-                </div>
-
-                <div className="bg-linear-to-br from-green-50 to-emerald-50 rounded-xl border border-green-200/50 p-3">
-                  <div className="flex items-center space-x-2 mb-1.5">
-                    <div className="w-8 h-8 bg-linear-to-br from-green-500 to-emerald-500 rounded-lg flex items-center justify-center shadow-sm">
-                      <Ruler className="w-4 h-4 text-white" />
-                    </div>
-                    <p className="text-gray-600 text-xs font-medium">
-                      Distance
-                    </p>
-                  </div>
-                  <p className="text-xl font-bold text-green-600">
-                    {readData.distanceDisplay}
-                  </p>
-                </div>
-
-                <div className="bg-linear-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200/50 p-3">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center space-x-2">
-                      <div
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center shadow-sm ${sensorData.status === "INSERTION" ||
-                            sensorData.status === "RETRACTION"
-                            ? "bg-linear-to-br from-green-500 to-emerald-500"
-                            : sensorData.status === "PAUSED" ||
-                              sensorData.status === "RETRACTION PAUSED"
-                              ? "bg-linear-to-br from-yellow-500 to-orange-500"
-                              : sensorData.status === "HOMING"
-                                ? "bg-linear-to-br from-purple-500 to-indigo-500"
-                                : sensorData.status === "READY" ||
-                                  sensorData.status === "INSERTION COMPLETED"
-                                  ? "bg-linear-to-br from-blue-500 to-indigo-500"
-                                  : "bg-linear-to-br from-gray-400 to-gray-500"
-                          }`}
-                      >
-                        <Activity className="w-4 h-4 text-white" />
-                      </div>
-                      <p className="text-gray-600 text-xs font-medium">
-                        Status
-                      </p>
-                    </div>
-                    <div
-                      className={`w-2.5 h-2.5 rounded-full ${sensorData.status === "INSERTION" ||
-                          sensorData.status === "RETRACTION"
-                          ? "bg-green-500 animate-pulse"
-                          : sensorData.status === "PAUSED" ||
-                            sensorData.status === "RETRACTION PAUSED"
-                            ? "bg-yellow-500"
-                            : sensorData.status === "HOMING"
-                              ? "bg-purple-500 animate-pulse"
-                              : sensorData.status === "READY" ||
-                                sensorData.status === "INSERTION COMPLETED"
-                                ? "bg-blue-500"
-                                : "bg-gray-400"
-                        }`}
-                    ></div>
-                  </div>
-                  <p
-                    className={`text-xl font-bold ${sensorData.status === "INSERTION" ||
-                        sensorData.status === "RETRACTION"
-                        ? "text-green-600"
-                        : sensorData.status === "PAUSED" ||
-                          sensorData.status === "RETRACTION PAUSED"
-                          ? "text-yellow-600"
-                          : sensorData.status === "HOMING"
-                            ? "text-purple-600"
-                            : sensorData.status === "READY" ||
-                              sensorData.status === "INSERTION COMPLETED"
-                              ? "text-blue-600"
-                              : "text-gray-600"
-                      }`}
-                  >
-                    {sensorData.status}
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div
-            className={`${isXlScreen ? "relative" : "fixed bottom-0 left-0 right-0"} bg-white/95 xl:bg-white/70 backdrop-blur-xl rounded-t-2xl xl:rounded-2xl border-t xl:border border-gray-200/80 p-3 sm:p-4 shadow-2xl xl:shadow-xl shadow-gray-200/50 z-20 shrink-0`}
-          >
-            {isXlScreen && (
-              <div className="mb-2">
-                <h3 className="text-lg font-bold text-gray-900">
-                  Process Controls
-                </h3>
-                <p className="text-gray-600 text-xs">
-                  Manage process execution
-                </p>
-              </div>
-            )}
-
-            <div className="flex space-x-2 sm:space-x-3 justify-center max-w-2xl mx-auto">
-              <button
-                onClick={handleStart}
-                disabled={shouldDisableStartButton()}
-                className={`flex-1 flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-3 sm:py-3 rounded-lg sm:rounded-xl font-bold transition-all transform hover:scale-[1.02] min-w-0 ${shouldDisableStartButton()
-                    ? "bg-gray-200 cursor-not-allowed text-gray-500 border border-gray-300"
-                    : "bg-linear-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-xl shadow-green-500/25 border border-green-400/30"
-                  }`}
-              >
-                <Play className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="text-sm sm:text-base">
-                  {getStartButtonText()}
-                </span>
-              </button>
-
-              <button
-                onClick={handlePause}
-                disabled={shouldDisablePauseButton()}
-                className={`flex-1 flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-3 rounded-lg sm:rounded-xl font-bold transition-all transform hover:scale-[1.02] min-w-0 ${shouldDisablePauseButton()
-                    ? "bg-gray-200 cursor-not-allowed text-gray-500 border border-gray-300"
-                    : "bg-linear-to-br from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white shadow-xl shadow-yellow-500/25 border border-yellow-400/30"
-                  }`}
-              >
-                <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="text-sm sm:text-base">PAUSE</span>
-              </button>
-
-              <button
-                onClick={handleRetraction}
-                disabled={shouldDisableRetractionButton()}
-                className={`flex-1 flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-3 rounded-lg sm:rounded-xl font-bold transition-all transform hover:scale-[1.02] min-w-0 ${shouldDisableRetractionButton()
-                    ? "bg-gray-200 cursor-not-allowed text-gray-500 border border-gray-300"
-                    : "bg-linear-to-br from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white shadow-xl shadow-purple-500/25 border border-purple-400/30"
-                  }`}
-              >
-                <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="text-sm sm:text-base">
-                  {getRetractionButtonText()}
-                </span>
-              </button>
-
-              <button
-                onClick={handleReset}
-                disabled={shouldDisableResetButton()}
-                className={`flex-1 flex items-center justify-center space-x-1 sm:space-x-2 px-3 sm:px-4 py-3 rounded-lg sm:rounded-xl font-bold transition-all transform hover:scale-[1.02] min-w-0 ${shouldDisableResetButton()
-                    ? "bg-gray-200 cursor-not-allowed text-gray-500 border border-gray-300"
-                    : "bg-linear-to-br from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-xl shadow-red-500/25 border border-red-400/30"
-                  }`}
-              >
-                <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
-                <span className="text-sm sm:text-base">RESET</span>
-                {coilLLSStatus && (
-                  <span className="text-xs ml-1 text-gray-500"></span>
+            {/* Live sensors card */}
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-4 shadow-xl shrink-0">
+              <h3 className="text-base font-bold text-gray-900 mb-1">Real-time Sensors</h3>
+              <p className="text-xs text-gray-400 mb-3">Live monitoring data</p>
+              <div className={`grid gap-3 ${is3Point ? "grid-cols-2" : "grid-cols-1"}`}>
+                <SensorCard label="Catheter Distance" value={liveData.catheterDistance} unit="mm" gradient="from-violet-500 to-indigo-500" bg="from-violet-50 to-indigo-50" border="border-violet-200/60" textColor="text-violet-700" icon={<Ruler className="w-4 h-4 text-white" />} />
+                <SensorCard label="Probe Distance"    value={liveData.probeDistance}    unit="mm" gradient="from-green-500 to-emerald-500" bg="from-green-50 to-emerald-50"   border="border-green-200/60"  textColor="text-green-700"  icon={<Ruler className="w-4 h-4 text-white" />} />
+                <SensorCard label="Force"             value={liveData.force}            unit="mN" gradient="from-cyan-500 to-blue-500"    bg="from-cyan-50 to-blue-50"       border="border-cyan-200/60"   textColor="text-blue-700"   icon={<Gauge className="w-4 h-4 text-white" />} />
+                {is3Point && (
+                  <SensorCard label="Steps to Move (R72)" value={liveData.stepsToMove} unit="" gradient="from-orange-500 to-amber-500" bg="from-orange-50 to-amber-50" border="border-orange-200/60" textColor="text-orange-700" icon={<Activity className="w-4 h-4 text-white" />} />
                 )}
-              </button>
+              </div>
             </div>
-          </div>
-        </section>
+
+            {/* Status card */}
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-4 shadow-xl shrink-0">
+              <h3 className="text-base font-bold text-gray-900 mb-3">Machine Status</h3>
+              <div className={`flex items-center space-x-3 rounded-xl px-4 py-3 border ${meta.badge} border-current/20`}>
+                <div className={`w-3 h-3 rounded-full shrink-0 ${meta.dot}`} />
+                <span className={`text-lg font-bold tracking-wide ${meta.color}`}>{status}</span>
+              </div>
+            </div>
+
+            {/* Spacer to push controls down */}
+            <div className="flex-1" />
+          </section>
+        )}
+
+        {/* ── Process Controls ──────────────────────────────────────────────────
+            Fixed bottom bar on small screens, inline on xl ─────────────────── */}
+        <div className={`${isXl ? "hidden" : "fixed bottom-0 left-0 right-0"} bg-white/95 backdrop-blur-xl border-t border-gray-200/80 shadow-2xl p-3 sm:p-4 z-20 shrink-0`}>
+          <ControlButtons
+            onStart={handleStart}
+            onPause={handlePause}
+            onReset={handleReset}
+            canStart={canStart}
+            canPause={canPause}
+            canReset={canReset}
+          />
+        </div>
       </main>
+
+      {/* xl-screen controls (inside sidebar at bottom) */}
+      {isXl && (
+        <div className="shrink-0 bg-white/70 backdrop-blur-xl border-t border-gray-200/80 shadow-2xl px-5 py-4">
+          <div className="max-w-xl mx-auto">
+            <ControlButtons
+              onStart={handleStart}
+              onPause={handlePause}
+              onReset={handleReset}
+              canStart={canStart}
+              canPause={canPause}
+              canReset={canReset}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+// ── Sub-components ─────────────────────────────────────────────────────────────
+
+/** Small telemetry tile — used on non-xl screens inside the grid above the chart */
+const TeleTile = ({ label, value, unit, colorClass, bgClass, textClass }) => (
+  <div className={`bg-gradient-to-br ${bgClass} rounded-xl border p-2.5`}>
+    <p className="text-gray-500 text-xs font-medium mb-1 truncate">{label}</p>
+    <p className={`text-sm font-bold ${textClass}`}>
+      {value}{value !== "--" && unit ? <span className="text-xs font-normal ml-0.5">{unit}</span> : null}
+    </p>
+  </div>
+);
+
+/** Larger sensor card for xl sidebar */
+const SensorCard = ({ label, value, unit, gradient, bg, border, textColor, icon }) => (
+  <div className={`bg-gradient-to-br ${bg} rounded-xl border ${border} p-3`}>
+    <div className="flex items-center space-x-2 mb-1.5">
+      <div className={`w-7 h-7 bg-gradient-to-br ${gradient} rounded-lg flex items-center justify-center shadow-sm`}>
+        {icon}
+      </div>
+      <p className="text-gray-500 text-xs font-medium">{label}</p>
+    </div>
+    <p className={`text-lg font-bold ${textColor}`}>
+      {value}{value !== "--" && unit ? <span className="text-xs font-normal ml-0.5">{unit}</span> : null}
+    </p>
+  </div>
+);
+
+/** Active config details block — shared by sidebar and slide panel */
+const ConfigDetails = ({ config, is3Point, liveData }) => {
+  if (!config) {
+    return (
+      <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded-r-xl">
+        <p className="text-yellow-800 text-sm font-medium">⚠️ No configuration loaded</p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-2">
+      <InfoRow label="Config Name" value={config.configName} highlight />
+      <InfoRow label="Test Type" value={is3Point ? "3-Point" : "2-Point"} />
+      {config.pathlength  && <InfoRow label="Path Length"      value={`${config.pathlength} mm`} />}
+      {config.thresholdForce && <InfoRow label="Threshold Force" value={`${config.thresholdForce} mN`} />}
+      {config.insertionLength  && <InfoRow label="Insertion Length"  value={`${config.insertionLength} mm`} />}
+      {config.retractionLength && <InfoRow label="Retraction Length" value={`${config.retractionLength} mm`} />}
+      {config.speed       && <InfoRow label="Speed"            value={`${config.speed}`} />}
+      {is3Point && config.noOfSteps && <InfoRow label="No. of Steps"   value={config.noOfSteps} accent />}
+    </div>
+  );
+};
+
+const InfoRow = ({ label, value, highlight, accent }) => (
+  <div className={`rounded-lg px-3 py-2 border ${highlight ? "bg-gradient-to-r from-blue-50 to-cyan-50 border-blue-200/50" : accent ? "bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200/50" : "bg-gray-50/80 border-gray-200/60"}`}>
+    <p className="text-gray-400 text-xs mb-0.5">{label}</p>
+    <p className={`text-sm font-bold ${highlight ? "text-blue-700" : accent ? "text-orange-700" : "text-gray-700"}`}>{value}</p>
+  </div>
+);
+
+/** The three control buttons */
+const ControlButtons = ({ onStart, onPause, onReset, canStart, canPause, canReset }) => (
+  <div className="flex space-x-2 sm:space-x-3 max-w-2xl mx-auto">
+    {/* START — M10 */}
+    <button
+      id="btn-start"
+      onClick={onStart}
+      disabled={!canStart}
+      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${canStart
+        ? "bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-xl shadow-green-500/25 border border-green-400/30 hover:scale-[1.02]"
+        : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
+      }`}
+    >
+      <Play className="w-4 h-4 sm:w-5 sm:h-5" />
+      <span>START</span>
+    </button>
+
+    {/* PAUSE — M11 */}
+    <button
+      id="btn-pause"
+      onClick={onPause}
+      disabled={!canPause}
+      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${canPause
+        ? "bg-gradient-to-br from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white shadow-xl shadow-yellow-500/25 border border-yellow-400/30 hover:scale-[1.02]"
+        : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
+      }`}
+    >
+      <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
+      <span>PAUSE</span>
+    </button>
+
+    {/* RESET — M12 */}
+    <button
+      id="btn-reset"
+      onClick={onReset}
+      disabled={!canReset}
+      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${canReset
+        ? "bg-gradient-to-br from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-xl shadow-red-500/25 border border-red-400/30 hover:scale-[1.02]"
+        : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
+      }`}
+    >
+      <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+      <span>RESET</span>
+    </button>
+  </div>
+);
 
 export default ProcessMode;

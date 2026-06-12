@@ -131,11 +131,15 @@ const COIL_CATHETER_BACK = 2006;   // M6
 const COIL_CATHETER_FORWARD = 2007; // M7
 const COIL_2POINT = 2008;          // M8
 const COIL_3POINT = 2009;          // M9
+const COIL_START = 2010;           // M10
+const COIL_STOP = 2011;            // M11
+const COIL_RESET = 2012;           // M12
 
 const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe Distance
 const REG_FORCE = 54;     // 2 registers (32-bit float)  — Force
 const REG_MANUAL_DISTANCE = 71;   // 1 register (16-bit integer) — Catheter Distance (R71)
 const REG_MACHINE_STATUS = 11;    // 1 register (16-bit integer) — Machine Status (R11): 1=IDLE, 2=HOMING, 3=READY
+const REG_STEPS = 72;             // 1 register (16-bit integer) — No. of Steps to move (R72)
 
 // -------------------------
 // Helper: Convert two 16-bit Modbus registers → 32-bit float (Little-Endian word order)
@@ -168,8 +172,9 @@ const client = new ModbusRTU();
 let plcState = {
   distance: 0,        // R70  — Probe Distance (mm)
   force_mN: 0,        // R54  — Force (mN, 32-bit float)
-  catheterDistance: 0,// 6550 — Catheter Distance (mm)
-  machineStatus: 1,   // R11  — Machine Status (1=IDLE, 2=HOMING, 3=READY)
+  catheterDistance: 0,// R71  — Catheter Distance (mm)
+  machineStatus: 1,   // R11  — Machine Status (1=IDLE, 2=HOMING, 3=READY, etc.)
+  stepsToMove: 0,     // R72  — Steps to move
   coilLLS: false,
   clamp: false,
   probeUp: false,
@@ -875,13 +880,26 @@ async function processModbusLoop() {
             case 1: statusText = 'IDLE'; break;
             case 2: statusText = 'HOMING'; break;
             case 3: statusText = 'READY'; break;
-            default: statusText = 'IDLE'; break;
+            case 4: statusText = 'SEARCHING CONTACT'; break;
+            case 5: statusText = 'RUNNING'; break;
+            case 6: statusText = 'RETRACTING'; break;
+            case 7: statusText = 'COMPLETED'; break;
+            default: statusText = 'UNKNOWN'; break;
           }
           console.log(`📊 Machine Status R11: ${plcState.machineStatus} (${statusText})`);
           plcState._statusLogTime = Date.now();
         }
       } catch (e) {
         console.error('❌ REG_MACHINE_STATUS(R11) read error:', e.message);
+      }
+
+      // Read Steps Register R72
+      try {
+        const stepsRes = await client.readHoldingRegisters(REG_STEPS, 1);
+        plcState.stepsToMove = stepsRes.data[0];
+        cycleSuccess = true;
+      } catch (e) {
+        console.error('❌ REG_STEPS(R72) read error:', e.message);
       }
 
       // Heartbeat pulse check: if pulse has stopped, trigger disconnection
@@ -949,6 +967,10 @@ async function readPLCData() {
         case 1: return 'IDLE';
         case 2: return 'HOMING';
         case 3: return 'READY';
+        case 4: return 'SEARCHING CONTACT';
+        case 5: return 'RUNNING';
+        case 6: return 'RETRACTING';
+        case 7: return 'COMPLETED';
         default: return 'UNKNOWN';
       }
     })(),
@@ -961,9 +983,13 @@ async function readPLCData() {
     force_mN: plcState.force_mN,
     forceDisplay: `${plcState.force_mN.toFixed(2)} mN`,
 
-    // Catheter Distance — 6550
+    // Catheter Distance — R71
     catheterDistance: plcState.catheterDistance,
     catheterDistanceDisplay: `${plcState.catheterDistance} mm`,
+
+    // Steps to Move — R72
+    stepsToMove: plcState.stepsToMove,
+    stepsToMoveDisplay: `${plcState.stepsToMove}`,
 
     // Coil states
     coilLLS: plcState.coilLLS,
@@ -1267,7 +1293,6 @@ ipcMain.handle("start", async () => {
     await client.writeCoil(COIL_STOP, false);
     await client.writeCoil(COIL_RESET, false);
     await client.writeCoil(COIL_START, true);
-    await client.writeCoil(COIL_RETRACTION, false);
 
     return { startInitiated: true };
   });
@@ -1278,17 +1303,10 @@ ipcMain.handle("stop", async () => {
   return await safeExecute("STOP", async () => {
     if (!isConnected) throw new Error("Modbus not connected");
 
-    coilState.retraction = false;
-    coilState.heater = false;
-    coilState.manualRet = false;
-    insertionState = false; // Added
-    retState = false;       // Added
-
-    await client.writeCoil(COIL_RETRACTION, false);
     await client.writeCoil(COIL_START, false);
     await client.writeCoil(COIL_STOP, true);
 
-    return { success: true, retraction: false };
+    return { success: true };
   });
 });
 
@@ -1304,34 +1322,19 @@ ipcMain.handle("reset", async () => {
 });
 
 ipcMain.handle("heating", async () => {
-  return await safeExecute("HEATING", async () => {
-    if (!isConnected) throw new Error("Modbus not connected");
-
-    coilState.heating = !coilState.heating;
-    await client.writeCoil(COIL_HEATING, coilState.heating);
-
-    return { heating: coilState.heating };
-  });
+  return { success: true };
 });
 
+ipcMain.handle("heater", async () => {
+  return { success: true };
+});
+
+ipcMain.handle("heater-off", async () => {
+  return { success: true };
+});
 
 ipcMain.handle("retraction", async () => {
-  return await safeExecute("RETRACTION", async () => {
-    if (!isConnected) throw new Error("Modbus not connected");
-
-    // Do NOT toggle – only turn ON
-    if (coilState.retraction) {
-      return { success: true, retraction: true };
-    }
-
-    coilState.retraction = true;
-
-    await client.writeCoil(COIL_RETRACTION, true);
-    await client.writeCoil(COIL_STOP, false);
-    await client.writeCoil(COIL_START, false);
-
-    return { success: true, retraction: true };
-  });
+  return { success: true };
 });
 
 

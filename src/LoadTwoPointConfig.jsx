@@ -49,7 +49,7 @@ const LoadTwoPointConfig = () => {
         return;
       }
 
-      localStorage.setItem('selectedConfig', JSON.stringify(selectedConfig));
+      localStorage.setItem('selectedConfig', JSON.stringify({ ...selectedConfig, testType: '2-point' }));
       navigate('/process-mode');
 
     } catch (error) {
