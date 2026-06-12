@@ -11,7 +11,6 @@ import ProcessLogs from "./ProcessLogs.jsx";
 import ProcessMode from "./ProcessMode.jsx"; // add this import
 import UpdateChecker from "./UpdateChecker.jsx";
 import TestSelection from "./TestSelection.jsx";
-import TestActionSelection from "./TestActionSelection.jsx";
 import CreateTwoPointConfig from "./CreateTwoPointConfig.jsx";
 import CreateThreePointConfig from "./CreateThreePointConfig.jsx";
 import LoadTwoPointConfig from "./LoadTwoPointConfig.jsx";
@@ -92,7 +91,6 @@ const App = () => {
           <Route path="/handle-config/delete" element={<HandleConfig mode="delete" />} />
           <Route path="/process-logs" element={<ProcessLogs />} />
           <Route path="/test-selection" element={<TestSelection />} />
-          <Route path="/test-action/:testType" element={<TestActionSelection />} />
           <Route path="/create-config/2-point" element={<CreateTwoPointConfig />} />
           <Route path="/create-config/3-point" element={<CreateThreePointConfig />} />
           <Route path="/load-config/2-point" element={<LoadTwoPointConfig />} />

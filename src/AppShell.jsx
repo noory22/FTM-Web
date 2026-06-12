@@ -195,11 +195,6 @@ const AppShell = () => {
         console.error('Failed to deactivate manual mode:', error);
       }
       navigate('/main-menu');
-    } else if (path.includes('test-action/')) {
-      navigate('/test-selection');
-    } else if (path.includes('create-config/') || path.includes('load-config/') || path.includes('delete-config/')) {
-      const is2Point = path.includes('2-point');
-      navigate(`/test-action/${is2Point ? '2-point' : '3-point'}`);
     } else if (path.includes('process-mode')) {
       // Check machine status from R11 value — allow back only in safe states
       const safeStatuses = ['IDLE', 'READY', 'UNKNOWN', 'COMPLETED'];
