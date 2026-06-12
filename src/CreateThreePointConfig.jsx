@@ -135,22 +135,14 @@ const CreateThreePointConfig = () => {
   };
 
   const handleBack = () => {
-    navigate('/test-action/3-point');
+    navigate('/main-menu');
   };
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 to-slate-100 p-4 md:p-6">
       <div className="w-full mx-auto">
         <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={handleBack}
-              className="p-2 hover:bg-white hover:shadow-md rounded-lg transition-all duration-200"
-            >
-              <ArrowLeft className="w-6 h-6 text-slate-600" />
-            </button>
-            <h1 className="text-2xl md:text-3xl font-bold text-slate-800">Create 3-Point Configuration</h1>
-          </div>
+          <h1 className="text-2xl md:text-3xl font-bold text-slate-800">Create 3-Point Configuration</h1>
           <div className="flex items-center space-x-2">
             <button
               onClick={() => setShowHelpModal(true)}

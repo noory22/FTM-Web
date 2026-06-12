@@ -28,19 +28,7 @@ const TestActionSelection = () => {
 
   return (
     <div className="min-h-screen flex flex-col bg-linear-to-br from-slate-50 via-blue-50 to-indigo-100 p-6">
-      <div className="flex items-center space-x-4 mb-12">
-        <button
-          onClick={handleBack}
-          className="p-3 bg-white hover:bg-slate-50 rounded-xl shadow-md transition-all duration-200"
-        >
-          <ArrowLeft className="w-6 h-6 text-slate-600" />
-        </button>
-        <h1 className="text-3xl font-bold bg-linear-to-r from-gray-800 to-gray-600 bg-clip-text text-transparent capitalize">
-          {testType} Test Actions
-        </h1>
-      </div>
-
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center pt-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl">
           <button
             onClick={handleCreate}

@@ -485,19 +485,9 @@ const Manual = () => {
       <div className="w-full mx-auto">
 
         {/* ══════════════ HEADER ══════════════ */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 md:mb-8">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-end gap-4 mb-6 md:mb-8">
 
-          <div className="flex items-center space-x-2 md:space-x-4">
-            <button
-              onClick={handleBackButton}
-              className="p-2 hover:bg-white hover:shadow-md rounded-lg transition-all duration-200"
-            >
-              <ArrowLeft className="w-6 h-6 text-slate-600" />
-            </button>
-            <h1 className="text-2xl md:text-3xl font-bold text-slate-800">Manual Mode</h1>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {emergencyActive && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 text-red-700 border border-red-300 animate-pulse">
                 <AlertTriangle className="w-4 h-4" />
@@ -535,7 +525,7 @@ const Manual = () => {
             >
               <Power className="w-3 h-3 sm:w-5 sm:h-5 lg:w-6 lg:h-6 group-hover:scale-110 transition-transform duration-300" />
             </button>
-          </div>
+          </div> */}
         </div>
 
         {/* ══════════════ MAIN GRID ══════════════ */}

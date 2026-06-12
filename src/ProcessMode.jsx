@@ -1139,7 +1139,7 @@ const ProcessMode = () => {
   };
 
   const handleBack = () => {
-    navigate("/handle-config/load");
+    navigate("/main-menu");
   };
 
   const getStartButtonText = () => {
@@ -1980,18 +1980,6 @@ const ProcessMode = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-2 sm:space-x-6 min-w-0">
               <div className="flex items-center space-x-2 sm:space-x-4 min-w-0">
-                <button
-                  onClick={handleBack}
-                  disabled={shouldDisableBackButton()}
-                  className={`p-1.5 sm:p-2 rounded-xl transition-all duration-300 group shrink-0 ${shouldDisableBackButton()
-                      ? "bg-gray-100 cursor-not-allowed text-gray-400"
-                      : "p-2 hover:bg-white hover:shadow-md rounded-lg transition-all duration-200"
-                    }`}
-                >
-                  <ArrowLeft
-                    className={`${isXlScreen ? "w-6 h-6" : "w-5 h-5"}`}
-                  />
-                </button>
                 <div className="min-w-0">
                   <h1
                     className={`${isXlScreen ? "text-2xl" : isLgScreen ? "text-xl" : "text-lg"} font-bold bg-linear-to-r from-gray-900 to-blue-700 bg-clip-text text-transparent truncate`}

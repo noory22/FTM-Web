@@ -129,6 +129,8 @@ const COIL_PROBE_UP = 2004;        // M4
 const COIL_PROBE_DOWN = 2005;      // M5
 const COIL_CATHETER_BACK = 2006;   // M6
 const COIL_CATHETER_FORWARD = 2007; // M7
+const COIL_2POINT = 2008;          // M8
+const COIL_3POINT = 2009;          // M9
 
 const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe Distance
 const REG_FORCE = 54;     // 2 registers (32-bit float)  — Force
@@ -139,6 +141,7 @@ const REG_MACHINE_STATUS = 11;    // 1 register (16-bit integer) — Machine Sta
 // Helper: Convert two 16-bit Modbus registers → 32-bit float (Little-Endian word order)
 // Most Delta PLCs send floats as: word[0] = low word, word[1] = high word
 // -------------------------
+// Helper function declaration has been simplified
 function registersToFloat32LE(lowWord, highWord) {
   const buf = new ArrayBuffer(4);
   const view = new DataView(buf);
@@ -173,6 +176,9 @@ let plcState = {
   probeDown: false,
   catheterBack: false,
   catheterForward: false,
+  manual: false,      // M1
+  twoPoint: false,    // M8
+  threePoint: false,  // M9
   lastUpdated: 0
 };
 
@@ -761,14 +767,18 @@ async function processModbusLoop() {
         }
       } catch (e) { }
 
-      // Read Control Coils (Feedback Loop M3-M7)
+      // Read Mode and Control Coils (Feedback Loop M1-M9)
       try {
-        const ctrlRes = await client.readCoils(COIL_CLAMP, 5);
-        plcState.clamp = Boolean(ctrlRes.data[0]);           // M3
-        plcState.probeUp = Boolean(ctrlRes.data[1]);         // M4
-        plcState.probeDown = Boolean(ctrlRes.data[2]);       // M5
-        plcState.catheterBack = Boolean(ctrlRes.data[3]);    // M6
-        plcState.catheterForward = Boolean(ctrlRes.data[4]); // M7
+        const ctrlRes = await client.readCoils(COIL_MANUAL, 9);
+        plcState.manual = Boolean(ctrlRes.data[0]);          // M1
+        plcState.manualExit = Boolean(ctrlRes.data[1]);      // M2
+        plcState.clamp = Boolean(ctrlRes.data[2]);           // M3
+        plcState.probeUp = Boolean(ctrlRes.data[3]);         // M4
+        plcState.probeDown = Boolean(ctrlRes.data[4]);       // M5
+        plcState.catheterBack = Boolean(ctrlRes.data[5]);    // M6
+        plcState.catheterForward = Boolean(ctrlRes.data[6]); // M7
+        plcState.twoPoint = Boolean(ctrlRes.data[7]);        // M8
+        plcState.threePoint = Boolean(ctrlRes.data[8]);      // M9
       } catch (e) { }
 
       // Read Safety Coils
@@ -962,6 +972,9 @@ async function readPLCData() {
     probeDown: plcState.probeDown,
     catheterBack: plcState.catheterBack,
     catheterForward: plcState.catheterForward,
+    manual: plcState.manual,
+    twoPoint: plcState.twoPoint,
+    threePoint: plcState.threePoint,
 
     rawRegisters: {}
   };
@@ -1359,6 +1372,32 @@ ipcMain.handle("manual-mode-activate", async () => {
 ipcMain.handle("manual-mode-deactivate", async () => {
   return await safeExecute("MANUAL-MODE-DEACTIVATE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
+    await client.writeCoil(COIL_MANUAL, false);
+    await client.writeCoil(COIL_MANUAL_EXIT, true);
+    return { success: true };
+  });
+});
+
+ipcMain.handle("two-point-activate", async () => {
+  console.log("⚡ IPC: two-point-activate command received");
+  return await safeExecute("TWO-POINT-ACTIVATE", async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+    console.log(`🔌 Writing COIL_2POINT(2008) = true, COIL_3POINT(2009) = false, COIL_MANUAL(2001) = false, COIL_MANUAL_EXIT(2002) = true`);
+    await client.writeCoil(COIL_2POINT, true);
+    await client.writeCoil(COIL_3POINT, false);
+    await client.writeCoil(COIL_MANUAL, false);
+    await client.writeCoil(COIL_MANUAL_EXIT, true);
+    return { success: true };
+  });
+});
+
+ipcMain.handle("three-point-activate", async () => {
+  console.log("⚡ IPC: three-point-activate command received");
+  return await safeExecute("THREE-POINT-ACTIVATE", async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+    console.log(`🔌 Writing COIL_3POINT(2009) = true, COIL_2POINT(2008) = false, COIL_MANUAL(2001) = false, COIL_MANUAL_EXIT(2002) = true`);
+    await client.writeCoil(COIL_3POINT, true);
+    await client.writeCoil(COIL_2POINT, false);
     await client.writeCoil(COIL_MANUAL, false);
     await client.writeCoil(COIL_MANUAL_EXIT, true);
     return { success: true };

@@ -32,6 +32,8 @@ contextBridge.exposeInMainWorld("api", {
   disableManualMode: () => ipcRenderer.invoke('disable-manual-mode'),
   manualModeActivate: () => ipcRenderer.invoke("manual-mode-activate"),
   manualModeDeactivate: () => ipcRenderer.invoke("manual-mode-deactivate"),
+  twoPointActivate: () => ipcRenderer.invoke("two-point-activate"),
+  threePointActivate: () => ipcRenderer.invoke("three-point-activate"),
   deactivateManual: () => ipcRenderer.invoke("deactivate-manual"),
   clampControl: (state) => ipcRenderer.invoke("clamp-control", state),
   catheterForward: () => ipcRenderer.invoke("catheter-forward"),
