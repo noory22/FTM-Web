@@ -15,13 +15,11 @@ import {
   Play,
   Pause,
   RotateCcw,
-  Power,
   Info,
   X,
   Activity,
   Gauge,
   Ruler,
-  Usb,
   ArrowRight,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
@@ -97,14 +95,43 @@ const ProcessMode = () => {
   const isXl = screenW >= 1920;
   const isLg = screenW >= 1366 && screenW < 1920;
 
-  // ── Load config from localStorage ─────────────────────────────────────────────
+  // ── Load config from localStorage and activate appropriate mode ─────────────────
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem("selectedConfig");
-      if (raw) setSelectedConfig(JSON.parse(raw));
-    } catch (e) {
-      console.error("Error reading config from localStorage:", e);
-    }
+    const loadConfigAndActivateMode = async () => {
+      try {
+        const raw = localStorage.getItem("selectedConfig");
+        if (raw) {
+          const config = JSON.parse(raw);
+          setSelectedConfig(config);
+          
+          // Activate the appropriate mode coil based on test type
+          if (config.testType === "2-point") {
+            await window.api.twoPointActivate();
+            console.log("✅ 2-POINT mode activated on PLC");
+          } else if (config.testType === "3-point") {
+            await window.api.threePointActivate();
+            console.log("✅ 3-POINT mode activated on PLC");
+          }
+        }
+      } catch (e) {
+        console.error("Error loading config from localStorage:", e);
+      }
+    };
+    
+    loadConfigAndActivateMode();
+    
+    // Cleanup: Deactivate both modes when component unmounts (navigating back)
+    return () => {
+      const deactivateModes = async () => {
+        try {
+          await window.api.deactivateManual();
+          console.log("✅ Modes deactivated on unmount");
+        } catch (e) {
+          console.error("Error deactivating modes:", e);
+        }
+      };
+      deactivateModes();
+    };
   }, []);
 
   // ── Connection monitoring ─────────────────────────────────────────────────────
@@ -438,8 +465,6 @@ const ProcessMode = () => {
           </div>
 
           <div className="flex items-center space-x-2 shrink-0">
-            
-
             {/* Info button */}
             <button
               onClick={() => setShowInfoModal(true)}
@@ -619,7 +644,7 @@ const SensorCard = ({ label, value, unit, gradient, bg, border, textColor, icon 
   </div>
 );
 
-/** Active config details block — shared by sidebar and slide panel */
+/** Active config details block — shows ALL parameters based on test type */
 const ConfigDetails = ({ config, is3Point, liveData }) => {
   if (!config) {
     return (
@@ -628,16 +653,32 @@ const ConfigDetails = ({ config, is3Point, liveData }) => {
       </div>
     );
   }
+
+  // For 2-Point config
+  if (!is3Point) {
+    return (
+      <div className="space-y-2">
+        <InfoRow label="Config Name" value={config.configName} highlight />
+        <InfoRow label="Test Type" value="2-Point" />
+        <InfoRow label="Probe Travel Limit" value={config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--"} />
+        <InfoRow label="Force Limit" value={config.forceLimit ? `${config.forceLimit} mN` : "--"} />
+        <InfoRow label="Test Speed" value={config.testSpeed ? `${config.testSpeed} mm/min` : "--"} />
+      </div>
+    );
+  }
+
+  // For 3-Point config
   return (
     <div className="space-y-2">
       <InfoRow label="Config Name" value={config.configName} highlight />
-      <InfoRow label="Test Type" value={is3Point ? "3-Point" : "2-Point"} />
-      {config.pathlength  && <InfoRow label="Path Length"      value={`${config.pathlength} mm`} />}
-      {config.thresholdForce && <InfoRow label="Threshold Force" value={`${config.thresholdForce} mN`} />}
-      {config.insertionLength  && <InfoRow label="Insertion Length"  value={`${config.insertionLength} mm`} />}
-      {config.retractionLength && <InfoRow label="Retraction Length" value={`${config.retractionLength} mm`} />}
-      {config.speed       && <InfoRow label="Speed"            value={`${config.speed}`} />}
-      {is3Point && config.noOfSteps && <InfoRow label="No. of Steps"   value={config.noOfSteps} accent />}
+      <InfoRow label="Test Type" value="3-Point" />
+      <InfoRow label="Test Length" value={config.testLength ? `${config.testLength} mm` : "--"} />
+      <InfoRow label="Measurement Interval" value={config.measurementInterval ? `${config.measurementInterval} s` : "--"} />
+      <InfoRow label="Probe Travel Limit" value={config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--"} />
+      <InfoRow label="Force Limit" value={config.forceLimit ? `${config.forceLimit} mN` : "--"} />
+      <InfoRow label="Test Speed" value={config.testSpeed ? `${config.testSpeed} mm/min` : "--"} />
+      <InfoRow label="Support Span" value={config.supportSpan ? `${config.supportSpan} mm` : "--"} />
+      <InfoRow label="Horizontal Speed" value={config.horizontalSpeed ? `${config.horizontalSpeed} mm/min` : "--"} />
     </div>
   );
 };
