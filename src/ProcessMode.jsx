@@ -438,17 +438,7 @@ const ProcessMode = () => {
           </div>
 
           <div className="flex items-center space-x-2 shrink-0">
-            {/* Connection badge */}
-            <div className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl font-medium text-xs border ${isConnected ? "bg-green-50 text-green-700 border-green-200" : "bg-red-50 text-red-700 border-red-200"}`}>
-              <Usb className="w-4 h-4" />
-              <span className="hidden sm:inline">{isConnected ? "USB CONNECTED" : "USB DISCONNECTED"}</span>
-            </div>
-
-            {!isConnected && (
-              <button onClick={handleReconnect} className="px-3 py-1.5 text-xs font-semibold bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors hidden sm:block">
-                Reconnect
-              </button>
-            )}
+            
 
             {/* Info button */}
             <button
@@ -468,20 +458,6 @@ const ProcessMode = () => {
                 <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             )}
-
-            {/* Power / Exit */}
-            <button
-              onClick={() => {
-                if (window.confirm("Are you sure you want to exit?")) window.close();
-              }}
-              disabled={!SAFE_STATUSES.has(status)}
-              className={`rounded-xl w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center transition-all duration-200 shadow-lg border ${!SAFE_STATUSES.has(status)
-                ? "bg-gray-200 cursor-not-allowed text-gray-400 border-gray-300"
-                : "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white hover:-translate-y-0.5 hover:shadow-xl border-red-400/30"
-              }`}
-            >
-              <Power className="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
           </div>
         </div>
       </header>
