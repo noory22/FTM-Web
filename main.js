@@ -124,11 +124,11 @@ const COIL_LLS = 3922; // Modbus address for M1922 (2000 + 1922)
 // Manual Mode Coils
 const COIL_MANUAL = 2001;          // M1
 const COIL_MANUAL_EXIT = 2002;     // M2
-const COIL_CLAMP = 2003;           // M3
-const COIL_PROBE_UP = 2004;        // M4
-const COIL_PROBE_DOWN = 2005;      // M5
-const COIL_CATHETER_BACK = 2006;   // M6
-const COIL_CATHETER_FORWARD = 2007; // M7
+const COIL_CLAMP = 1003;           // X3
+const COIL_PROBE_UP = 1006;        // X6
+const COIL_PROBE_DOWN = 1005;      // X5
+const COIL_CATHETER_BACK = 1008;   // X8
+const COIL_CATHETER_FORWARD = 1007; // X7
 const COIL_2POINT = 2008;          // M8
 const COIL_3POINT = 2009;          // M9
 const COIL_START = 2010;           // M10
@@ -711,6 +711,240 @@ async function safeReadRegisters(address, count) {
 // -------------------------
 // Background Modbus Processing Loop
 // -------------------------
+// let consecutiveErrors = 0;
+
+// async function processModbusLoop() {
+//   if (isLoopRunning) return;
+//   isLoopRunning = true;
+//   console.log("🔄 Background Modbus Loop Started");
+
+//   while (true) {
+//     // 0. Critical Check: Unexpected Port Closure
+//     if (isConnected && !client.isOpen) {
+//       console.error("❌ Port closed unexpectedly (client.isOpen is false). Triggering disconnect.");
+//       isConnected = false;
+//       consecutiveErrors = 0;
+//       if (mainWindow && !mainWindow.isDestroyed()) {
+//         mainWindow.webContents.send('modbus-status', 'disconnected');
+//       }
+//     }
+
+//     // 1. Check Connection
+//     if (!isConnected || !client.isOpen) {
+//       // Wait before checking again
+//       await new Promise(resolve => setTimeout(resolve, 500));
+//       continue;
+//     }
+
+//     try {
+//       // 2. Process High Priority Commands FIRST
+//       if (commandQueue.length > 0) {
+//         const cmd = commandQueue.shift();
+//         console.log(`🚀 Loop: Executing command from queue: ${cmd.commandName} (remaining: ${commandQueue.length})`);
+//         try {
+//           const result = await cmd.task();
+//           console.log(`✅ Loop: Command ${cmd.commandName} execution success!`);
+//           cmd.resolve(result);
+//         } catch (e) {
+//           console.error(`❌ Loop: Command ${cmd.commandName} failed:`, e.message);
+//           cmd.reject(e);
+//         }
+//         continue;
+//       }
+
+//       // 3. Read Data Cycle
+//       let cycleSuccess = false;
+//       let currentEmerState = lastEmerState;
+//       let currentPowState = lastPowState;
+
+//       // Read COIL_LLS
+//       try {
+//         const llsResult = await client.readCoils(COIL_LLS, 1);
+//         const currentLLSState = Boolean(llsResult.data[0]);
+//         plcState.coilLLS = currentLLSState;
+//         cycleSuccess = true;
+//         if (currentLLSState !== lastLLSState) {
+//           if (mainWindow && !mainWindow.isDestroyed()) {
+//             mainWindow.webContents.send('lls-status', currentLLSState.toString());
+//           }
+//           lastLLSState = currentLLSState;
+//           lastPulseTime = Date.now(); // Update pulse timer on transition
+//         }
+//       } catch (e) { }
+
+//       // Read Mode and Control Coils (Feedback Loop M1-M9)
+//       try {
+//         const ctrlRes = await client.readCoils(COIL_MANUAL, 9);
+//         plcState.manual = Boolean(ctrlRes.data[0]);          // M1
+//         plcState.manualExit = Boolean(ctrlRes.data[1]);      // M2
+//         plcState.clamp = Boolean(ctrlRes.data[2]);           // M3
+//         plcState.probeUp = Boolean(ctrlRes.data[3]);         // M4
+//         plcState.probeDown = Boolean(ctrlRes.data[4]);       // M5
+//         plcState.catheterBack = Boolean(ctrlRes.data[5]);    // M6
+//         plcState.catheterForward = Boolean(ctrlRes.data[6]); // M7
+//         plcState.twoPoint = Boolean(ctrlRes.data[7]);        // M8
+//         plcState.threePoint = Boolean(ctrlRes.data[8]);      // M9
+//       } catch (e) { }
+
+//       // Read Safety Coils
+//       try {
+//         const emerResult = await client.readCoils(COIL_EMER, 1);
+//         currentEmerState = Boolean(emerResult.data[0]);
+//         cycleSuccess = true;
+//       } catch (e) { }
+
+//       try {
+//         const powResult = await client.readCoils(COIL_POW, 1);
+//         currentPowState = !Boolean(powResult.data[0]);
+//         cycleSuccess = true;
+//       } catch (e) { }
+
+//       // Global Safety Check
+//       if (currentEmerState || !currentPowState) {
+//         console.log(`🚨 Loop Safety Active: emer=${currentEmerState}, pow=${currentPowState} (currentPowState is !Boolean(COIL_POW) = !${!currentPowState}). isHardwareStopActive=${isHardwareStopActive}`);
+//         await performSafetyStop(currentEmerState ? "Emergency Pressed" : "Power OFF");
+//       } else {
+//         if (isHardwareStopActive) {
+//           console.log(`✅ Loop Safety Cleared: emer=${currentEmerState}, pow=${currentPowState}`);
+//         }
+//         isHardwareStopActive = false;
+//       }
+
+//       // Emit Safety Updates
+//       if (currentEmerState !== lastEmerState) {
+//         if (mainWindow && !mainWindow.isDestroyed()) {
+//           mainWindow.webContents.send('emergency-status', currentEmerState);
+//         }
+//         lastEmerState = currentEmerState;
+//       }
+//       if (currentPowState !== lastPowState) {
+//         if (mainWindow && !mainWindow.isDestroyed()) {
+//           mainWindow.webContents.send('power-status', currentPowState);
+//         }
+//         lastPowState = currentPowState;
+//       }
+
+//       // Read Registers
+//       try {
+//         const dRes = await client.readHoldingRegisters(REG_DISTANCE, 1);
+//         plcState.distance = dRes.data[0];
+//         cycleSuccess = true;
+//       } catch (e) { }
+
+//       try {
+//         const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
+//         const rawLow = fRes.data[0];
+//         const rawHigh = fRes.data[1];
+//         // Try both: plain 16-bit int (rawLow) and 32-bit float interpretations
+//         const asInt16 = rawLow;                              // raw as plain integer
+//         const asScaled = rawLow / 10.0;                      // common: value * 0.1
+//         const floatLE = registersToFloat32LE(rawLow, rawHigh);
+//         const floatBE = registersToFloat32BE(rawLow, rawHigh);
+//         // Log every 5s
+//         if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
+//           console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}]`);
+//           console.log(`   → as Int16:  ${asInt16} mN`);
+//           console.log(`   → as /10:    ${asScaled} mN`);
+//           console.log(`   → as LE f32: ${isFinite(floatLE) ? floatLE.toFixed(3) : 'NaN'} mN`);
+//           console.log(`   → as BE f32: ${isFinite(floatBE) ? floatBE.toFixed(3) : 'NaN'} mN`);
+//           plcState._forceLogTime = Date.now();
+//         }
+//         // Use raw Int16 as default — change to asScaled or floatLE if the value looks wrong
+//         plcState.force_mN = isFinite(asInt16) ? asInt16 : 0;
+//         cycleSuccess = true;
+//       } catch (e) {
+//         console.error('❌ REG_FORCE read error:', e.message);
+//       }
+
+//       try {
+//         const mdRes = await client.readHoldingRegisters(REG_MANUAL_DISTANCE, 1);
+//         const rawCath = mdRes.data[0];
+//         // Store as-is (plain integer, no conversion)
+//         plcState.catheterDistance = rawCath;
+//         if (Date.now() - (plcState._cathLogTime || 0) > 5000) {
+//           console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} mm`);
+//           plcState._cathLogTime = Date.now();
+//         }
+//         cycleSuccess = true;
+//       } catch (e) {
+//         console.error('❌ REG_CATHETER(R71) read error:', e.message);
+//       }
+//       // Read Machine Status Register R11
+//       try {
+//         const statusRes = await client.readHoldingRegisters(REG_MACHINE_STATUS, 1);
+//         plcState.machineStatus = statusRes.data[0];
+//         cycleSuccess = true;
+//         if (Date.now() - (plcState._statusLogTime || 0) > 5000) {
+//           let statusText = '';
+//           switch (plcState.machineStatus) {
+//             case 1: statusText = 'IDLE'; break;
+//             case 2: statusText = 'HOMING'; break;
+//             case 3: statusText = 'READY'; break;
+//             case 4: statusText = 'SEARCHING CONTACT'; break;
+//             case 5: statusText = 'RUNNING'; break;
+//             case 6: statusText = 'RETRACTING'; break;
+//             case 7: statusText = 'COMPLETED'; break;
+//             default: statusText = 'UNKNOWN'; break;
+//           }
+//           console.log(`📊 Machine Status R11: ${plcState.machineStatus} (${statusText})`);
+//           plcState._statusLogTime = Date.now();
+//         }
+//       } catch (e) {
+//         console.error('❌ REG_MACHINE_STATUS(R11) read error:', e.message);
+//       }
+
+//       // Read Steps Register R72
+//       try {
+//         const stepsRes = await client.readHoldingRegisters(REG_STEPS, 1);
+//         plcState.stepsToMove = stepsRes.data[0];
+//         cycleSuccess = true;
+//       } catch (e) {
+//         console.error('❌ REG_STEPS(R72) read error:', e.message);
+//       }
+
+//       // Heartbeat pulse check: if pulse has stopped, trigger disconnection
+//       const HEARTBEAT_TIMEOUT = 4000; // 4 seconds timeout
+//       if (isConnected && (Date.now() - lastPulseTime > HEARTBEAT_TIMEOUT)) {
+//         console.warn(`❌ PLC heartbeat stopped (no transition detected on COIL_LLS for ${Date.now() - lastPulseTime}ms).`);
+//         cycleSuccess = false;
+//       }
+
+//       // 4. Connection Success/Failure Tracking
+//       if (cycleSuccess) {
+//         consecutiveErrors = 0;
+//       } else {
+//         consecutiveErrors++;
+//         if (consecutiveErrors >= 5) {
+//           isConnected = false;
+//           if (mainWindow && !mainWindow.isDestroyed()) {
+//             mainWindow.webContents.send('modbus-status', 'disconnected');
+//           }
+//           try { if (client.isOpen) client.close(); } catch (e) { }
+//           consecutiveErrors = 0;
+//         }
+//       }
+
+//       plcState.lastUpdated = Date.now();
+
+//     } catch (loopError) {
+//       console.error("⚠️ Modbus loop error:", loopError.message);
+//       // Wait a bit longer on error
+//       await new Promise(resolve => setTimeout(resolve, 500));
+//       continue;
+//     }
+
+//     // 5. Yield / Wait
+//     // Short wait to prevent blocking event loop, but keep high poll rate
+//     // 20ms = ~50 polls/sec theoretical max (in practice less due to serial latency)
+//     await new Promise(resolve => setTimeout(resolve, 20));
+//   }
+// }
+
+// // Start the loop
+// processModbusLoop();
+// -------------------------
+// Background Modbus Processing Loop
+// -------------------------
 let consecutiveErrors = 0;
 
 async function processModbusLoop() {
@@ -757,7 +991,7 @@ async function processModbusLoop() {
       let currentEmerState = lastEmerState;
       let currentPowState = lastPowState;
 
-      // Read COIL_LLS
+      // Read COIL_LLS (Heartbeat - X bit or M bit based on your PLC)
       try {
         const llsResult = await client.readCoils(COIL_LLS, 1);
         const currentLLSState = Boolean(llsResult.data[0]);
@@ -770,38 +1004,76 @@ async function processModbusLoop() {
           lastLLSState = currentLLSState;
           lastPulseTime = Date.now(); // Update pulse timer on transition
         }
-      } catch (e) { }
+      } catch (e) { 
+        console.error('❌ COIL_LLS read error:', e.message);
+      }
 
-      // Read Mode and Control Coils (Feedback Loop M1-M9)
+      // ==============================================
+      // READ M BITS (Internal Relays - Mode Selection)
+      // ==============================================
       try {
         const ctrlRes = await client.readCoils(COIL_MANUAL, 9);
-        plcState.manual = Boolean(ctrlRes.data[0]);          // M1
-        plcState.manualExit = Boolean(ctrlRes.data[1]);      // M2
-        plcState.clamp = Boolean(ctrlRes.data[2]);           // M3
-        plcState.probeUp = Boolean(ctrlRes.data[3]);         // M4
-        plcState.probeDown = Boolean(ctrlRes.data[4]);       // M5
-        plcState.catheterBack = Boolean(ctrlRes.data[5]);    // M6
-        plcState.catheterForward = Boolean(ctrlRes.data[6]); // M7
-        plcState.twoPoint = Boolean(ctrlRes.data[7]);        // M8
-        plcState.threePoint = Boolean(ctrlRes.data[8]);      // M9
-      } catch (e) { }
+        plcState.manual = Boolean(ctrlRes.data[0]);          // M1 (2001)
+        plcState.manualExit = Boolean(ctrlRes.data[1]);      // M2 (2002)
+        // Note: M3-M7 are not used for mode control but kept for compatibility
+        plcState.twoPoint = Boolean(ctrlRes.data[7]);        // M8 (2008)
+        plcState.threePoint = Boolean(ctrlRes.data[8]);      // M9 (2009)
+        cycleSuccess = true;
+      } catch (e) { 
+        console.error('❌ Error reading M bits (Mode selection):', e.message);
+      }
 
-      // Read Safety Coils
+      // ==============================================
+      // READ X BITS (Physical Inputs - Sensors/Switches)
+      // ==============================================
+      try {
+        // Read X3 (Clamp sensor)
+        const clampRes = await client.readCoils(COIL_CLAMP, 1);
+        plcState.clamp = Boolean(clampRes.data[0]);
+        
+        // Read X5 (Probe Down sensor)
+        const probeDownRes = await client.readCoils(COIL_PROBE_DOWN, 1);
+        plcState.probeDown = Boolean(probeDownRes.data[0]);
+        
+        // Read X6 (Probe Up sensor)
+        const probeUpRes = await client.readCoils(COIL_PROBE_UP, 1);
+        plcState.probeUp = Boolean(probeUpRes.data[0]);
+        
+        // Read X7 (Catheter Forward sensor)
+        const cathFwdRes = await client.readCoils(COIL_CATHETER_FORWARD, 1);
+        plcState.catheterForward = Boolean(cathFwdRes.data[0]);
+        
+        // Read X8 (Catheter Back sensor)
+        const cathBackRes = await client.readCoils(COIL_CATHETER_BACK, 1);
+        plcState.catheterBack = Boolean(cathBackRes.data[0]);
+        
+        cycleSuccess = true;
+      } catch (e) { 
+        console.error('❌ Error reading X bits (Physical inputs):', e.message);
+      }
+
+      // ==============================================
+      // READ SAFETY X BITS (Emergency & Power)
+      // ==============================================
       try {
         const emerResult = await client.readCoils(COIL_EMER, 1);
         currentEmerState = Boolean(emerResult.data[0]);
         cycleSuccess = true;
-      } catch (e) { }
+      } catch (e) { 
+        console.error('❌ COIL_EMER read error:', e.message);
+      }
 
       try {
         const powResult = await client.readCoils(COIL_POW, 1);
-        currentPowState = !Boolean(powResult.data[0]);
+        currentPowState = !Boolean(powResult.data[0]);  // Inverted logic for power
         cycleSuccess = true;
-      } catch (e) { }
+      } catch (e) { 
+        console.error('❌ COIL_POW read error:', e.message);
+      }
 
       // Global Safety Check
       if (currentEmerState || !currentPowState) {
-        console.log(`🚨 Loop Safety Active: emer=${currentEmerState}, pow=${currentPowState} (currentPowState is !Boolean(COIL_POW) = !${!currentPowState}). isHardwareStopActive=${isHardwareStopActive}`);
+        console.log(`🚨 Loop Safety Active: emer=${currentEmerState}, pow=${currentPowState}. isHardwareStopActive=${isHardwareStopActive}`);
         await performSafetyStop(currentEmerState ? "Emergency Pressed" : "Power OFF");
       } else {
         if (isHardwareStopActive) {
@@ -829,7 +1101,9 @@ async function processModbusLoop() {
         const dRes = await client.readHoldingRegisters(REG_DISTANCE, 1);
         plcState.distance = dRes.data[0];
         cycleSuccess = true;
-      } catch (e) { }
+      } catch (e) { 
+        console.error('❌ REG_DISTANCE read error:', e.message);
+      }
 
       try {
         const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
@@ -869,6 +1143,7 @@ async function processModbusLoop() {
       } catch (e) {
         console.error('❌ REG_CATHETER(R71) read error:', e.message);
       }
+
       // Read Machine Status Register R11
       try {
         const statusRes = await client.readHoldingRegisters(REG_MACHINE_STATUS, 1);
@@ -963,7 +1238,7 @@ async function readPLCData() {
     // Machine Status — R11
     machineStatus: plcState.machineStatus,
     machineStatusDisplay: (() => {
-      switch(plcState.machineStatus) {
+      switch (plcState.machineStatus) {
         case 1: return 'IDLE';
         case 2: return 'HOMING';
         case 3: return 'READY';

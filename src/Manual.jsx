@@ -464,8 +464,6 @@ const Manual = () => {
   // Check if controls should be enabled
   const controlsEnabled = connectionStatus.connected && !emergencyActive && manualModeActive;
 
-
-
   const handleBackButton = async () => {
     try {
       console.log('Deactivating manual mode before leaving...');
@@ -529,16 +527,16 @@ const Manual = () => {
         </div>
 
         {/* ══════════════ MAIN GRID ══════════════ */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 lg:items-stretch">
 
-          {/* ══════════ LEFT: Graph + Live Data ══════════ */}
-          <div className="flex flex-col w-full space-y-4 md:space-y-6 min-w-0">
+          {/* ══════════ LEFT: Graph ══════════ */}
+          <div className="flex flex-col w-full min-w-0 h-full">
 
-            {/* Graph card */}
-            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-              <div className="p-4 md:p-6">
+            {/* Graph card — stretches to fill the full height of the right column */}
+            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden flex flex-col flex-1 h-full">
+              <div className="p-4 md:p-6 flex flex-col flex-1 h-full">
 
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 md:mb-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4 md:mb-6 flex-shrink-0">
                   <div className="flex items-center space-x-2 md:space-x-3">
                     <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg shadow-sm">
                       <TrendingUp className="w-5 h-5 text-white" />
@@ -548,7 +546,7 @@ const Manual = () => {
                       <p className="text-slate-500 text-xs font-medium">Real-time analysis</p>
                     </div>
                   </div>
-                  <div className="flex items-center space-x-3 sm:space-x-5 bg-slate-50/50 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-slate-100 shadow-sm">
+                  <div className="flex items-center space-x-3 sm:space-x-5 bg-slate-50/50 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-slate-100 shadow-sm flex-shrink-0">
                     <div className="flex items-center space-x-2">
                       <div className="w-8 h-1 bg-blue-500 rounded-full" />
                       <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Probe Down</span>
@@ -560,68 +558,13 @@ const Manual = () => {
                   </div>
                 </div>
 
-                <div className="w-full" style={{ height: '320px' }}>
+                {/* Chart wrapper grows to fill remaining card height */}
+                <div className="flex-1 w-full min-h-0" style={{ minHeight: '320px' }}>
                   <Line data={chartConfig} options={chartOptions} redraw={false} />
                 </div>
               </div>
             </div>
 
-            {/* Live Data card */}
-            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
-              <div className="grid grid-cols-3 gap-3 md:gap-6">
-
-                {/* Force - R54 */}
-                <div className="flex items-center space-x-3 bg-slate-50 p-3 md:p-5 rounded-xl border border-slate-100">
-                  <div className="p-2 md:p-3 bg-blue-100 rounded-xl shrink-0">
-                    <svg className="w-5 h-5 md:w-6 md:h-6 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                    </svg>
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-slate-500 text-xs font-medium mb-0.5 truncate">Force (R54)</p>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-slate-800 font-bold text-lg md:text-2xl">
-                        {force === '--' ? '--' : `${parseFloat(force).toFixed(2)}`}
-                      </span>
-                      <span className="text-slate-400 text-xs">mN</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Probe Distance - R70 */}
-                <div className="flex items-center space-x-3 bg-slate-50 p-3 md:p-5 rounded-xl border border-slate-100">
-                  <div className="p-2 md:p-3 bg-blue-100 rounded-xl shrink-0">
-                    <ChevronDown className="w-5 h-5 md:w-6 md:h-6 text-blue-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-slate-500 text-xs font-medium mb-0.5 truncate">Probe Dist. (R70)</p>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-slate-800 font-bold text-lg md:text-2xl">
-                        {probeDistance === '--' ? '--' : `${probeDistance}`}
-                      </span>
-                      <span className="text-slate-400 text-xs">mm</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Catheter Distance - 6550 */}
-                <div className="flex items-center space-x-3 bg-slate-50 p-3 md:p-5 rounded-xl border border-slate-100">
-                  <div className="p-2 md:p-3 bg-emerald-100 rounded-xl shrink-0">
-                    <Move className="w-5 h-5 md:w-6 md:h-6 text-emerald-600" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-slate-500 text-xs font-medium mb-0.5 truncate">Catheter Dist. (6550)</p>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-slate-800 font-bold text-lg md:text-2xl">
-                        {catheterDistance === '--' ? '--' : `${catheterDistance}`}
-                      </span>
-                      <span className="text-slate-400 text-xs">mm</span>
-                    </div>
-                  </div>
-                </div>
-
-              </div>
-            </div>
           </div>
           {/* end left column */}
 
@@ -629,14 +572,11 @@ const Manual = () => {
           <div className="flex flex-col gap-4 md:gap-6 w-full">
 
             {/* Top row: Probe + Clamp side by side */}
-            <div className="flex gap-4 md:gap-6">
+            <div className="flex gap-4 md:gap-6 flex-1">
 
               {/* Probe card */}
               <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6 flex-1 min-w-0">
                 <h3 className="text-base font-semibold text-slate-800 mb-1 text-center">Probe</h3>
-                <p className="text-[10px] text-slate-400 italic mb-4 text-center">
-                  Status Indicators
-                </p>
 
                 <div className="flex flex-col items-center gap-5">
 
@@ -650,7 +590,7 @@ const Manual = () => {
                         <div className="absolute -inset-1 bg-red-500 rounded-full animate-ping opacity-30 pointer-events-none" />
                       )}
                     </div>
-                    <span className="text-xs font-medium text-slate-600">Probe Up (M4)</span>
+                    {/* <span className="text-xs font-medium text-slate-600">Probe Up (M4)</span> */}
                   </div>
 
                   <div className="w-full border-t border-slate-100" />
@@ -665,7 +605,6 @@ const Manual = () => {
                         <div className="absolute -inset-1 bg-blue-500 rounded-full animate-ping opacity-30 pointer-events-none" />
                       )}
                     </div>
-                    <span className="text-xs font-medium text-slate-600">Probe Down (M5)</span>
                   </div>
 
                 </div>
@@ -675,7 +614,6 @@ const Manual = () => {
               {/* Clamp card */}
               <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6 flex-1 min-w-0">
                 <h3 className="text-base font-semibold text-slate-800 mb-1 text-center">Clamp</h3>
-                <p className="text-[10px] text-slate-400 italic mb-4 text-center">Coil 2003 (M3)</p>
 
                 <div className="flex justify-center">
                   <div
@@ -705,10 +643,6 @@ const Manual = () => {
             {/* Catheter card — full width below */}
             <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
               <h3 className="text-base font-semibold text-slate-800 mb-1 text-center">Catheter</h3>
-              <p className="text-[10px] text-slate-400 italic mb-4 text-center">
-                Status Indicators
-              </p>
-
               <div className="flex items-start justify-around gap-4">
 
                 {/* Catheter Forward - M7 */}
@@ -721,7 +655,7 @@ const Manual = () => {
                       <div className="absolute -inset-1 bg-green-500 rounded-full animate-ping opacity-30 pointer-events-none" />
                     )}
                   </div>
-                  <span className="text-xs font-medium text-slate-600">Forward (M7)</span>
+                  <span className="text-xs font-medium text-slate-600">Backward</span>
                 </div>
 
                 <div className="self-center w-px h-20 bg-slate-100" />
@@ -736,7 +670,7 @@ const Manual = () => {
                       <div className="absolute -inset-1 bg-amber-500 rounded-full animate-ping opacity-30 pointer-events-none" />
                     )}
                   </div>
-                  <span className="text-xs font-medium text-slate-600">Backward (M6)</span>
+                  <span className="text-xs font-medium text-slate-600">Forward</span>
                 </div>
 
               </div>
