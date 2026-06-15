@@ -11,20 +11,20 @@ const emptyAnalytics = {
 
 const MainMenu = () => {
   const navigate = useNavigate();
-  const [userRole, setUserRole] = useState(null);
+  // const [userRole, setUserRole] = useState(null);
   const [analytics, setAnalytics] = useState(emptyAnalytics);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  useEffect(() => {
-    const user = localStorage.getItem('user');
-    if (!user) {
-      navigate('/');
-      return;
-    }
+  // useEffect(() => {
+  //   const user = localStorage.getItem('user');
+  //   if (!user) {
+  //     navigate('/');
+  //     return;
+  //   }
 
-    setUserRole(JSON.parse(user).role);
-  }, [navigate]);
+  //   setUserRole(JSON.parse(user).role);
+  // }, [navigate]);
 
   useEffect(() => {
     let mounted = true;
@@ -139,7 +139,7 @@ const MainMenu = () => {
     );
   };
 
-  if (!userRole || isLoading) {
+  if (isLoading) { // [LOGIN BYPASSED] removed !userRole — no login required
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
@@ -165,10 +165,12 @@ const MainMenu = () => {
                 Overview of loaded configurations, created configurations, and saved configuration details.
               </p>
             </div>
+            {/* [LOGIN BYPASSED] Role badge removed — no role-based login
             <div className="w-fit rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Role</p>
               <p className="text-base font-bold capitalize text-slate-900">{userRole}</p>
             </div>
+            */}
           </div>
 
           {loadError && (

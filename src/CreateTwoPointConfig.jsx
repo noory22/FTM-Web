@@ -125,7 +125,7 @@ const CreateTwoPointConfig = () => {
   };
 
   const handleBack = () => {
-    navigate('/main-menu');
+    navigate('/');
   };
 
   return (

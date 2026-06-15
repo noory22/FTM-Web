@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import "./index.css";
-import Login from "./Login.jsx";
+// import Login from "./Login.jsx";
 import MainMenu from "./MainMenu.jsx";
 import CreateConfig from "./CreateConfig.jsx"; // Add this import
 import HandleConfig from "./HandleConfig.jsx";
@@ -38,11 +38,22 @@ const App = () => {
   return (
     <HashRouter>
       <Routes>
-      {/* Login page - NO SafetyAlert */}
-        <Route path="/" element={<Login />} />
+        {/* Login page - NO SafetyAlert */}
+        {/* <Route path="/" element={<Login />} /> */}
 
         <Route element={<AppShell />}>
           {/* Route for MainMenu with SafetyAlert */}
+          <Route
+            path="/"
+            element={
+              <>
+                {/* <SafetyAlert /> */}
+                <MainMenu />
+              </>
+            }
+          />
+
+          {/* [LOGIN BYPASSED] Alias route — sidebar Dashboard button navigates to /main-menu */}
           <Route
             path="/main-menu"
             element={

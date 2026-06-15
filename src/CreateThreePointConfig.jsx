@@ -32,7 +32,7 @@ const CreateThreePointConfig = () => {
     }
 
     const numericFields = [
-      'testLength', 'measurementInterval', 'probeTravelLimit', 
+      'testLength', 'measurementInterval', 'probeTravelLimit',
       'forceLimit', 'testSpeed', 'supportSpan', 'horizontalSpeed'
     ];
 
@@ -57,7 +57,7 @@ const CreateThreePointConfig = () => {
       }
     } else {
       if (value.startsWith('-') || value.startsWith('0') && !value.includes('.') || /[eE]/.test(value)) {
-        if(value !== '0.') return;
+        if (value !== '0.') return;
       }
       if (!/^\d*\.?\d*$/.test(value)) {
         return;
@@ -135,7 +135,7 @@ const CreateThreePointConfig = () => {
   };
 
   const handleBack = () => {
-    navigate('/main-menu');
+    navigate('/');
   };
 
   return (

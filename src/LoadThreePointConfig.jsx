@@ -63,7 +63,7 @@ const LoadThreePointConfig = () => {
   };
 
   const handleBack = () => {
-    navigate('/main-menu');
+    navigate('/');
   };
 
   return (
@@ -154,7 +154,7 @@ const LoadThreePointConfig = () => {
                     className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 text-slate-700 focus:outline-none"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Measurement Interval (s)</label>
                   <input
@@ -194,7 +194,7 @@ const LoadThreePointConfig = () => {
                     className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 text-slate-700 focus:outline-none"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Support Span (mm)</label>
                   <input

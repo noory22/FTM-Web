@@ -397,11 +397,11 @@ const Manual = () => {
             setCatheterDistance(isFinite(cd) ? cd : '--');
 
             // Update coil indicator states from PLC feedback
-            if (data.clamp          !== undefined) setClamp(Boolean(data.clamp));
-            if (data.probeUp        !== undefined) setProbeUp(Boolean(data.probeUp));
-            if (data.probeDown      !== undefined) setProbeDown(Boolean(data.probeDown));
+            if (data.clamp !== undefined) setClamp(Boolean(data.clamp));
+            if (data.probeUp !== undefined) setProbeUp(Boolean(data.probeUp));
+            if (data.probeDown !== undefined) setProbeDown(Boolean(data.probeDown));
             if (data.catheterForward !== undefined) setCatheterForward(Boolean(data.catheterForward));
-            if (data.catheterBack   !== undefined) setCatheterBack(Boolean(data.catheterBack));
+            if (data.catheterBack !== undefined) setCatheterBack(Boolean(data.catheterBack));
 
             // Update graph: x = probe distance, y = force
             setGraphData(prev => {
@@ -476,7 +476,7 @@ const Manual = () => {
       console.error('Failed to deactivate manual mode:', error);
     } finally {
       // Navigate back to main menu regardless of deactivation success/failure
-      navigate('/main-menu');
+      navigate('/');
     }
   };
 

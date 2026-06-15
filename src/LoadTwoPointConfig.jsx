@@ -59,7 +59,7 @@ const LoadTwoPointConfig = () => {
   };
 
   const handleBack = () => {
-    navigate('/main-menu');
+    navigate('/');
   };
 
   return (

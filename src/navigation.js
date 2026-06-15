@@ -73,29 +73,29 @@ export const pageTitles = {
   '/delete-config/3-point': 'Delete 3-Point Configuration',
 };
 
-const filterItemsByRole = (items, role) => (
-  items
-    .filter((item) => item.roles.includes(role))
-    .map((item) => {
-      if (!item.children) return item;
+// [LOGIN BYPASSED] Role filter function preserved but no longer used
+// const filterItemsByRole = (items, role) => (
+//   items
+//     .filter((item) => item.roles.includes(role))
+//     .map((item) => {
+//       if (!item.children) return item;
+//       return {
+//         ...item,
+//         children: filterItemsByRole(item.children, role),
+//       };
+//     })
+//     .filter((item) => !item.children || item.children.length > 0)
+// );
 
-      return {
-        ...item,
-        children: filterItemsByRole(item.children, role),
-      };
-    })
-    .filter((item) => !item.children || item.children.length > 0)
-);
-
+// [LOGIN BYPASSED] Returns ALL navigation groups — no role filtering applied
 export const getVisibleNavigationGroups = (role) => {
-  if (!role) return [];
+  // [LOGIN BYPASSED] Old role-based logic commented out:
+  // if (!role) return [];
+  // return navigationGroups
+  //   .map((group) => ({ ...group, items: filterItemsByRole(group.items, role) }))
+  //   .filter((group) => group.items.length > 0);
 
-  return navigationGroups
-    .map((group) => ({
-      ...group,
-      items: filterItemsByRole(group.items, role),
-    }))
-    .filter((group) => group.items.length > 0);
+  return navigationGroups; // Return everything, no filtering
 };
 
 export const getVisibleNavigationItems = (role) => {

@@ -16,7 +16,8 @@ import { getVisibleNavigationGroups, pageTitles } from './navigation.js';
 const AppShell = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [userRole, setUserRole] = useState(null);
+  // [LOGIN BYPASSED] const [userRole, setUserRole] = useState(null);
+  const userRole = 'admin'; // [LOGIN BYPASSED] Default role — no login required
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showPowerDropdown, setShowPowerDropdown] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
@@ -94,20 +95,20 @@ const AppShell = () => {
     updateModeFromPath();
   }, [location.pathname, connectionStatus, emergencyActive]);
 
-  useEffect(() => {
-    const user = localStorage.getItem('user');
-    if (!user) {
-      navigate('/');
-      return;
-    }
-
-    try {
-      setUserRole(JSON.parse(user).role);
-    } catch (error) {
-      localStorage.removeItem('user');
-      navigate('/');
-    }
-  }, [navigate]);
+  // [LOGIN BYPASSED] Auth guard removed — no login required
+  // useEffect(() => {
+  //   const user = localStorage.getItem('user');
+  //   if (!user) {
+  //     navigate('/');
+  //     return;
+  //   }
+  //   try {
+  //     setUserRole(JSON.parse(user).role);
+  //   } catch (error) {
+  //     localStorage.removeItem('user');
+  //     navigate('/');
+  //   }
+  // }, [navigate]);
 
   useEffect(() => {
     let mounted = true;
@@ -169,8 +170,7 @@ const AppShell = () => {
   }, [location.pathname]);
 
   const visibleGroups = useMemo(() => {
-    if (!userRole) return [];
-
+    // [LOGIN BYPASSED] removed !userRole guard — always show full navigation
     return getVisibleNavigationGroups(userRole);
   }, [userRole]);
 
@@ -186,7 +186,7 @@ const AppShell = () => {
 
   const handleGlobalBack = async () => {
     const path = location.pathname;
-    
+
     if (path.includes('manual-mode')) {
       try {
         console.log('Deactivating manual mode before leaving...');
@@ -194,7 +194,7 @@ const AppShell = () => {
       } catch (error) {
         console.error('Failed to deactivate manual mode:', error);
       }
-      navigate('/main-menu');
+      navigate('/');
     } else if (path.includes('process-mode')) {
       // Check machine status from R11 value — allow back only in safe states
       const safeStatuses = ['IDLE', 'READY', 'UNKNOWN', 'COMPLETED'];
@@ -217,7 +217,7 @@ const AppShell = () => {
       }
       navigate('/load-config/2-point');
     } else {
-      navigate('/main-menu');
+      navigate('/');
     }
   };
 
@@ -278,15 +278,14 @@ const AppShell = () => {
           type="button"
           onClick={() => handleNavClick(item)}
           disabled={disabled}
-          className={`flex min-h-11 w-full items-center gap-3 rounded-lg py-2.5 pr-3 text-left text-sm font-medium transition-colors ${
-            disabled
-              ? 'cursor-not-allowed text-slate-500'
-              : isActive
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30'
-                : itemHasActivePath(item)
-                  ? 'bg-white/10 text-white'
-                  : 'text-slate-200 hover:bg-white/10 hover:text-white'
-          }`}
+          className={`flex min-h-11 w-full items-center gap-3 rounded-lg py-2.5 pr-3 text-left text-sm font-medium transition-colors ${disabled
+            ? 'cursor-not-allowed text-slate-500'
+            : isActive
+              ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30'
+              : itemHasActivePath(item)
+                ? 'bg-white/10 text-white'
+                : 'text-slate-200 hover:bg-white/10 hover:text-white'
+            }`}
           style={{ paddingLeft: `${12 + depth * 18}px` }}
         >
           <Icon className="h-5 w-5 shrink-0" />
@@ -314,11 +313,11 @@ const AppShell = () => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('user');
-    navigate('/');
-    setShowPowerDropdown(false);
-  };
+  // const handleLogout = () => {
+  //   localStorage.removeItem('user');
+  //   navigate('/');
+  //   setShowPowerDropdown(false);
+  // };
 
   const handleExit = () => {
     if (window.confirm('Are you sure you want to exit?')) {
@@ -327,16 +326,17 @@ const AppShell = () => {
     setShowPowerDropdown(false);
   };
 
-  if (!userRole) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
-  }
+  // [LOGIN BYPASSED] Loading spinner guard removed — no login required
+  // if (!userRole) {
+  //   return (
+  //     <div className="min-h-screen flex items-center justify-center bg-slate-100">
+  //       <div className="text-center">
+  //         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+  //         <p className="mt-4 text-gray-600">Loading...</p>
+  //       </div>
+  //     </div>
+  //   );
+  // }
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
@@ -405,7 +405,7 @@ const AppShell = () => {
                 <Menu className="h-5 w-5" />
               </button>
 
-              {location.pathname !== '/' && location.pathname !== '/main-menu' && (
+              {location.pathname !== '/' && location.pathname !== '/' && (
                 <button
                   onClick={handleGlobalBack}
                   className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-50 flex items-center justify-center transition-all duration-200"
@@ -446,14 +446,12 @@ const AppShell = () => {
                   {/* Status Badge */}
                   <div className="flex flex-col min-w-[70px]">
                     <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Status</span>
-                    <span className={`inline-flex items-center gap-1.5 text-sm font-bold capitalize ${
-                      plcData.machineStatus === 'READY' ? 'text-green-600' :
+                    <span className={`inline-flex items-center gap-1.5 text-sm font-bold capitalize ${plcData.machineStatus === 'READY' ? 'text-green-600' :
                       plcData.machineStatus === 'HOMING' ? 'text-amber-500 animate-pulse' : 'text-slate-600'
-                    }`}>
-                      <span className={`h-2 w-2 rounded-full ${
-                        plcData.machineStatus === 'READY' ? 'bg-green-600' :
+                      }`}>
+                      <span className={`h-2 w-2 rounded-full ${plcData.machineStatus === 'READY' ? 'bg-green-600' :
                         plcData.machineStatus === 'HOMING' ? 'bg-amber-500 animate-pulse' : 'bg-slate-500'
-                      }`} />
+                        }`} />
                       {plcData.machineStatus}
                     </span>
                   </div>
@@ -505,13 +503,13 @@ const AppShell = () => {
 
                 {showPowerDropdown && (
                   <div className="absolute right-0 mt-2 w-48 rounded-lg border border-slate-200 bg-white py-1 shadow-xl">
-                    <button
+                    {/* <button
                       onClick={handleLogout}
                       className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
                     >
                       <LogOut className="h-4 w-4" />
                       Logout
-                    </button>
+                    </button> */}
                     <button
                       onClick={handleExit}
                       className="flex w-full items-center gap-2 px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50"
