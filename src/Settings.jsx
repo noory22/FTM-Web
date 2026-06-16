@@ -42,11 +42,11 @@ const Settings = () => {
           
           // Format R30 (Settings Force in grams)
           const forceVal = Number(data.settingsForce);
-          const formattedForce = isFinite(forceVal) ? `${forceVal} g` : '--';
+          const formattedForce = isFinite(forceVal) ? `${forceVal} gram` : '--';
 
           // Format R31 (Raw Force)
           const rawForceVal = Number(data.rawForce);
-          const formattedRawForce = isFinite(rawForceVal) ? `${rawForceVal} mN` : '--';
+          const formattedRawForce = isFinite(rawForceVal) ? `${rawForceVal} ` : '--';
 
           // Format R36 (PLC real-time changing value)
           const plcVal = Number(data.realtimePlcValue);
@@ -203,7 +203,6 @@ const Settings = () => {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Calibration Parameters</h3>
-                  <p className="text-xs text-slate-500">Inputs will write to registers R32 & R33 on PLC</p>
                 </div>
               </div>
 
@@ -236,7 +235,6 @@ const Settings = () => {
                       {isLoading ? 'Sending...' : 'Send'}
                     </button>
                   </div>
-                  <p className="text-[11px] text-slate-400 font-mono">Register Address: R32</p>
                 </div>
 
                 {/* Input Selector (R33) — instant write on click */}
@@ -263,20 +261,7 @@ const Settings = () => {
                       </button>
                     ))}
                   </div>
-                  <p className="text-[11px] text-slate-400 font-mono">Register Address: R33</p>
                 </div>
-
-                {/* Cancel Button */}
-                <div className="pt-4 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleCancel}
-                    className="py-3.5 px-6 border-2 border-slate-300 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition-all duration-200"
-                  >
-                    Cancel
-                  </button>
-                </div>
-
               </div>
             </div>
           </div>
@@ -291,7 +276,6 @@ const Settings = () => {
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-900">Live Calibration Reads</h3>
-                  <p className="text-xs text-slate-500">Real-time status registers from the PLC</p>
                 </div>
               </div>
 
@@ -302,7 +286,6 @@ const Settings = () => {
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between shadow-sm">
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Real-time Force</span>
-                    <p className="text-[11px] text-slate-400 font-mono">Register: R30 (16-bit integer)</p>
                   </div>
                   <div className="text-right">
                     <span className="text-2xl font-bold text-green-600 font-mono tracking-tight">
@@ -315,7 +298,6 @@ const Settings = () => {
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between shadow-sm">
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Raw Force Value</span>
-                    <p className="text-[11px] text-slate-400 font-mono">Register: R31 (16-bit integer)</p>
                   </div>
                   <div className="text-right">
                     <span className="text-2xl font-bold text-blue-600 font-mono tracking-tight">
@@ -328,7 +310,6 @@ const Settings = () => {
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between shadow-sm">
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PLC Real-time Value</span>
-                    <p className="text-[11px] text-slate-400 font-mono">Register: R36 (16-bit integer)</p>
                   </div>
                   <div className="text-right">
                     <span className="text-2xl font-bold text-amber-500 font-mono tracking-tight">
@@ -338,14 +319,6 @@ const Settings = () => {
                 </div>
 
               </div>
-
-              <div className="bg-slate-50 border border-slate-100 p-4 rounded-xl flex items-center gap-3">
-                <Cpu className="w-5 h-5 text-slate-400 shrink-0" />
-                <p className="text-xs text-slate-500 leading-normal">
-                  R30 and R31 are scaled values from the load cell transducer. R36 acts as the internal system calibration counter changing dynamically.
-                </p>
-              </div>
-
             </div>
           </div>
 
