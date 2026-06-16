@@ -7,11 +7,12 @@ import {
   Gauge,
   Home,
   Trash2,
+  Settings,
 } from 'lucide-react';
 
 export const navigationGroups = [
   {
-    title: 'Run',
+    // title: 'Run',
     items: [
       { label: 'Dashboard', path: '/main-menu', icon: Home, roles: ['admin', 'operator'] },
       { label: 'Manual Mode', path: '/manual-mode', icon: Gauge, roles: ['admin', 'operator'], action: 'manual', blockedByEmergency: true },
@@ -19,7 +20,13 @@ export const navigationGroups = [
     ],
   },
   {
-    title: 'Point Tests',
+    // title: 'Settings',
+    items: [
+      { label: 'Settings', path: '/settings', icon: Settings, roles: ['admin', 'operator'] }
+    ]
+  },
+  {
+    // title: 'Point Tests',
     items: [
       {
         label: 'Test Selection',
@@ -27,25 +34,25 @@ export const navigationGroups = [
         roles: ['admin', 'operator'],
         children: [
           {
-            label: '2-Point',
+            label: '2-Point Test',
             path: '/test-action/2-point',
             icon: ClipboardList,
             roles: ['admin', 'operator'],
             children: [
-              { label: 'Create', path: '/create-config/2-point', icon: FilePlus, roles: ['admin'] },
-              { label: 'Load', path: '/load-config/2-point', icon: FileInput, roles: ['admin', 'operator'] },
-              { label: 'Delete', path: '/delete-config/2-point', icon: Trash2, roles: ['admin'], danger: true },
+              { label: 'Create Configuration', path: '/create-config/2-point', icon: FilePlus, roles: ['admin'] },
+              { label: 'Continue to Process Mode', path: '/load-config/2-point', icon: FileInput, roles: ['admin', 'operator'] },
+              { label: 'Delete Configuration', path: '/delete-config/2-point', icon: Trash2, roles: ['admin'], danger: true },
             ],
           },
           {
-            label: '3-Point',
+            label: '3-Point Test',
             path: '/test-action/3-point',
             icon: ClipboardList,
             roles: ['admin', 'operator'],
             children: [
-              { label: 'Create', path: '/create-config/3-point', icon: FilePlus, roles: ['admin'] },
-              { label: 'Load', path: '/load-config/3-point', icon: FileInput, roles: ['admin', 'operator'] },
-              { label: 'Delete', path: '/delete-config/3-point', icon: Trash2, roles: ['admin'], danger: true },
+              { label: 'Create Configuration', path: '/create-config/3-point', icon: FilePlus, roles: ['admin'] },
+              { label: 'Continue to Process Mode', path: '/load-config/3-point', icon: FileInput, roles: ['admin', 'operator'] },
+              { label: 'Delete Configuration', path: '/delete-config/3-point', icon: Trash2, roles: ['admin'], danger: true },
             ],
           },
         ],
@@ -71,6 +78,7 @@ export const pageTitles = {
   '/load-config/3-point': 'Load 3-Point Configuration',
   '/delete-config/2-point': 'Delete 2-Point Configuration',
   '/delete-config/3-point': 'Delete 3-Point Configuration',
+  '/settings': 'Load Cell Calibration',
 };
 
 // [LOGIN BYPASSED] Role filter function preserved but no longer used

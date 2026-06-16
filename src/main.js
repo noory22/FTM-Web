@@ -183,6 +183,10 @@ let plcState = {
   manual: false,      // M1
   twoPoint: false,    // M8
   threePoint: false,  // M9
+  rawForce: 0,        // R31  — Raw Force Value
+  weightRange: 0,     // R32  — Weight Range (0-1000)
+  inputsMode: 0,      // R33  — Just 3 inputs (0,1,2)
+  realtimePlcValue: 0,// R36  — Real-time changing value on PLC
   lastUpdated: 0
 };
 
@@ -906,6 +910,26 @@ async function processModbusLoop() {
         console.error('❌ REG_STEPS(R72) read error:', e.message);
       }
 
+      // Read Calibration Registers R31-R33
+      try {
+        const calibRes1 = await client.readHoldingRegisters(31, 3);
+        plcState.rawForce = calibRes1.data[0];
+        plcState.weightRange = calibRes1.data[1];
+        plcState.inputsMode = calibRes1.data[2];
+        cycleSuccess = true;
+      } catch (e) {
+        console.error('❌ Calibration registers R31-R33 read error:', e.message);
+      }
+
+      // Read Calibration Register R36
+      try {
+        const calibRes2 = await client.readHoldingRegisters(36, 1);
+        plcState.realtimePlcValue = calibRes2.data[0];
+        cycleSuccess = true;
+      } catch (e) {
+        console.error('❌ Calibration register R36 read error:', e.message);
+      }
+
       // Heartbeat pulse check: if pulse has stopped, trigger disconnection
       const HEARTBEAT_TIMEOUT = 4000; // 4 seconds timeout
       if (isConnected && (Date.now() - lastPulseTime > HEARTBEAT_TIMEOUT)) {
@@ -963,6 +987,7 @@ async function readPLCData() {
   return {
     success: true,
 
+
     // Machine Status — R11
     machineStatus: plcState.machineStatus,
     machineStatusDisplay: (() => {
@@ -993,6 +1018,12 @@ async function readPLCData() {
     // Steps to Move — R72
     stepsToMove: plcState.stepsToMove,
     stepsToMoveDisplay: `${plcState.stepsToMove}`,
+
+    // Calibration parameters
+    rawForce: plcState.rawForce,
+    weightRange: plcState.weightRange,
+    inputsMode: plcState.inputsMode,
+    realtimePlcValue: plcState.realtimePlcValue,
 
     // Coil states
     coilLLS: plcState.coilLLS,
@@ -1450,6 +1481,31 @@ ipcMain.handle("catheter-forward", async () => {
 
 ipcMain.handle("catheter-backward", async () => {
   return { success: true };
+});
+
+ipcMain.handle("write-calibration-settings", async (event, { weightRange, inputsMode }) => {
+  return await safeExecute("WRITE_CALIBRATION_SETTINGS", async () => {
+    try {
+      console.log(`Writing Calibration Settings: weightRange=${weightRange}, inputsMode=${inputsMode}`);
+
+      if (!isConnected || !client.isOpen) {
+        throw new Error('Modbus not connected');
+      }
+
+      await client.writeRegister(32, Number(weightRange));
+      await delay(150);
+      await client.writeRegister(33, Number(inputsMode));
+      await delay(150);
+
+      plcState.weightRange = Number(weightRange);
+      plcState.inputsMode = Number(inputsMode);
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Error sending calibration settings:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
 });
 
 // Read data handler

@@ -140,6 +140,7 @@ const REG_FORCE = 54;     // 2 registers (32-bit float)  — Force
 const REG_MANUAL_DISTANCE = 71;   // 1 register (16-bit integer) — Catheter Distance (R71)
 const REG_MACHINE_STATUS = 11;    // 1 register (16-bit integer) — Machine Status (R11): 1=IDLE, 2=HOMING, 3=READY
 const REG_STEPS = 72;             // 1 register (16-bit integer) — No. of Steps to move (R72)
+const REG_SETTINGS_FORCE = 30;    // 1 register (16-bit integer) — Settings Force (R30, grams)
 
 // -------------------------
 // Helper: Convert two 16-bit Modbus registers → 32-bit float (Little-Endian word order)
@@ -184,6 +185,11 @@ let plcState = {
   manual: false,      // M1
   twoPoint: false,    // M8
   threePoint: false,  // M9
+  rawForce: 0,        // R31  — Raw Force Value
+  weightRange: 0,     // R32  — Weight Range (0-1000)
+  inputsMode: 0,      // R33  — Just 3 inputs (0,1,2)
+  realtimePlcValue: 0,// R36  — Real-time changing value on PLC
+  settingsForce: 0,   // R30  — Force for Settings screen (grams)
   lastUpdated: 0
 };
 
@@ -1177,6 +1183,35 @@ async function processModbusLoop() {
         console.error('❌ REG_STEPS(R72) read error:', e.message);
       }
 
+      // Read Calibration Registers R31-R33
+      try {
+        const calibRes1 = await client.readHoldingRegisters(31, 3);
+        plcState.rawForce = calibRes1.data[0];
+        plcState.weightRange = calibRes1.data[1];
+        plcState.inputsMode = calibRes1.data[2];
+        cycleSuccess = true;
+      } catch (e) {
+        console.error('❌ Calibration registers R31-R33 read error:', e.message);
+      }
+
+      // Read Calibration Register R36
+      try {
+        const calibRes2 = await client.readHoldingRegisters(36, 1);
+        plcState.realtimePlcValue = calibRes2.data[0];
+        cycleSuccess = true;
+      } catch (e) {
+        console.error('❌ Calibration register R36 read error:', e.message);
+      }
+
+      // Read Settings Force Register R30 (grams)
+      try {
+        const settingsForceRes = await client.readHoldingRegisters(REG_SETTINGS_FORCE, 1);
+        plcState.settingsForce = settingsForceRes.data[0];
+        cycleSuccess = true;
+      } catch (e) {
+        console.error('❌ Settings Force register R30 read error:', e.message);
+      }
+
       // Heartbeat pulse check: if pulse has stopped, trigger disconnection
       const HEARTBEAT_TIMEOUT = 4000; // 4 seconds timeout
       if (isConnected && (Date.now() - lastPulseTime > HEARTBEAT_TIMEOUT)) {
@@ -1265,6 +1300,13 @@ async function readPLCData() {
     // Steps to Move — R72
     stepsToMove: plcState.stepsToMove,
     stepsToMoveDisplay: `${plcState.stepsToMove}`,
+
+    // Calibration parameters
+    rawForce: plcState.rawForce,
+    weightRange: plcState.weightRange,
+    inputsMode: plcState.inputsMode,
+    realtimePlcValue: plcState.realtimePlcValue,
+    settingsForce: plcState.settingsForce,
 
     // Coil states
     coilLLS: plcState.coilLLS,
@@ -1880,6 +1922,31 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 //     }
 //   });
 // });
+
+ipcMain.handle("write-calibration-settings", async (event, { weightRange, inputsMode }) => {
+  return await safeExecute("WRITE_CALIBRATION_SETTINGS", async () => {
+    try {
+      console.log(`Writing Calibration Settings: weightRange=${weightRange}, inputsMode=${inputsMode}`);
+
+      if (!isConnected || !client.isOpen) {
+        throw new Error('Modbus not connected');
+      }
+
+      await client.writeRegister(32, Number(weightRange));
+      await delay(150);
+      await client.writeRegister(33, Number(inputsMode));
+      await delay(150);
+
+      plcState.weightRange = Number(weightRange);
+      plcState.inputsMode = Number(inputsMode);
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Error sending calibration settings:', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+});
 
 ipcMain.handle("send-2point-config", async (event, config) => {
   return await safeExecute("SEND_2POINT_CONFIG", async () => {

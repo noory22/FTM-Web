@@ -52,6 +52,7 @@ contextBridge.exposeInMainWorld("api", {
 
   // ============= DATA FUNCTIONS =============
   readData: () => ipcRenderer.invoke("read-data"),
+  writeCalibrationSettings: (settings) => ipcRenderer.invoke("write-calibration-settings", settings),
   // Add this to the exposed API in preload.js
   connectModbus: () => ipcRenderer.invoke("connect-modbus"),
   checkConnection: () => ipcRenderer.invoke("check-connection"),

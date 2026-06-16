@@ -17,6 +17,7 @@ import LoadTwoPointConfig from "./LoadTwoPointConfig.jsx";
 import LoadThreePointConfig from "./LoadThreePointConfig.jsx";
 import AppShell from "./AppShell.jsx";
 import DeletePointConfig from "./DeletePointConfig.jsx";
+import Settings from "./Settings.jsx";
 
 import SafetyAlert from "./SafetyAlert.jsx";
 
@@ -107,6 +108,7 @@ const App = () => {
           <Route path="/load-config/2-point" element={<LoadTwoPointConfig />} />
           <Route path="/load-config/3-point" element={<LoadThreePointConfig />} />
           <Route path="/delete-config/:testType" element={<DeletePointConfig />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
       </Routes>
       <UpdateChecker />
