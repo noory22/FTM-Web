@@ -1923,26 +1923,49 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 //   });
 // });
 
-ipcMain.handle("write-calibration-settings", async (event, { weightRange, inputsMode }) => {
-  return await safeExecute("WRITE_CALIBRATION_SETTINGS", async () => {
+// Write Weight Range to R32
+ipcMain.handle("write-weight-range", async (event, value) => {
+  return await safeExecute("WRITE_WEIGHT_RANGE", async () => {
     try {
-      console.log(`Writing Calibration Settings: weightRange=${weightRange}, inputsMode=${inputsMode}`);
+      const numVal = Number(value);
+      console.log(`📝 Writing Weight Range: ${numVal} to R32`);
 
       if (!isConnected || !client.isOpen) {
         throw new Error('Modbus not connected');
       }
 
-      await client.writeRegister(32, Number(weightRange));
-      await delay(150);
-      await client.writeRegister(33, Number(inputsMode));
+      await client.writeRegister(32, numVal);
       await delay(150);
 
-      plcState.weightRange = Number(weightRange);
-      plcState.inputsMode = Number(inputsMode);
+      plcState.weightRange = numVal;
 
       return { success: true };
     } catch (error) {
-      console.error('❌ Error sending calibration settings:', error.message);
+      console.error('❌ Error writing weight range (R32):', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+});
+
+// Write Inputs Mode to R33
+ipcMain.handle("write-inputs-mode", async (event, value) => {
+  return await safeExecute("WRITE_INPUTS_MODE", async () => {
+    try {
+      const numVal = Number(value);
+      console.log(`📝 Writing Inputs Mode: ${numVal} to R33`);
+
+      if (!isConnected || !client.isOpen) {
+        throw new Error('Modbus not connected');
+      }
+
+      await client.writeRegister(33, numVal);
+      await delay(150);
+
+      plcState.inputsMode = numVal;
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Error writing inputs mode (R33):', error.message);
       return { success: false, error: error.message };
     }
   });

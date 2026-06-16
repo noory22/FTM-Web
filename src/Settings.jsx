@@ -91,8 +91,8 @@ const Settings = () => {
     }
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  // Send weight range to R32
+  const handleSendWeight = async () => {
     setSuccessMessage('');
     setErrorMessage('');
 
@@ -110,21 +110,36 @@ const Settings = () => {
     setIsLoading(true);
 
     try {
-      const result = await window.api.writeCalibrationSettings({
-        weightRange: weightNum,
-        inputsMode: Number(inputsMode)
-      });
-
+      const result = await window.api.writeWeightRange(weightNum);
       if (result && result.success) {
-        setSuccessMessage('Calibration parameters written to PLC successfully.');
+        setSuccessMessage('Weight range written to R32 successfully.');
       } else {
-        setErrorMessage(result?.error || 'Failed to write calibration settings. Check Modbus connection.');
+        setErrorMessage(result?.error || 'Failed to write weight range.');
       }
     } catch (err) {
-      console.error('Error saving calibration settings:', err);
-      setErrorMessage(err.message || 'Error occurred while saving calibration settings.');
+      console.error('Error writing weight range:', err);
+      setErrorMessage(err.message || 'Error writing weight range.');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Instant write input mode to R33
+  const handleInputSelect = async (option) => {
+    setInputsMode(option);
+    setSuccessMessage('');
+    setErrorMessage('');
+
+    try {
+      const result = await window.api.writeInputsMode(Number(option));
+      if (result && result.success) {
+        setSuccessMessage(`Input ${option} written to R33 successfully.`);
+      } else {
+        setErrorMessage(result?.error || 'Failed to write input mode.');
+      }
+    } catch (err) {
+      console.error('Error writing input mode:', err);
+      setErrorMessage(err.message || 'Error writing input mode.');
     }
   };
 
@@ -192,32 +207,39 @@ const Settings = () => {
                 </div>
               </div>
 
-              <form onSubmit={handleSave} className="space-y-6">
+              <div className="space-y-6">
                 
-                {/* Weight Range Input (R32) */}
+                {/* Weight Range Input (R32) with inline Send button */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
                     <Weight className="w-4 h-4 text-slate-400" />
                     Weight Range (0-1000)
                   </label>
-                  <div className="relative">
-                    <input
-                      type="number"
-                      min="0"
-                      max="1000"
-                      value={weightRange}
-                      onChange={handleWeightChange}
-                      placeholder="Enter weight range parameter"
-                      className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 placeholder:text-slate-400 font-medium"
-                    />
-                    <div className="absolute inset-y-0 right-0 pr-4 flex items-center pointer-events-none">
-                      <span className="text-sm font-semibold text-slate-400">units</span>
+                  <div className="flex gap-3">
+                    <div className="relative flex-1">
+                      <input
+                        type="number"
+                        min="0"
+                        max="1000"
+                        value={weightRange}
+                        onChange={handleWeightChange}
+                        placeholder="Enter weight range parameter"
+                        className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 placeholder:text-slate-400 font-medium"
+                      />
                     </div>
+                    <button
+                      type="button"
+                      onClick={handleSendWeight}
+                      disabled={isLoading || connectionStatus !== 'connected'}
+                      className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-3 px-6 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    >
+                      {isLoading ? 'Sending...' : 'Send'}
+                    </button>
                   </div>
                   <p className="text-[11px] text-slate-400 font-mono">Register Address: R32</p>
                 </div>
 
-                {/* Input Selector (R33) */}
+                {/* Input Selector (R33) — instant write on click */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
                     <Binary className="w-4 h-4 text-slate-400" />
@@ -229,8 +251,9 @@ const Settings = () => {
                       <button
                         key={option}
                         type="button"
-                        onClick={() => setInputsMode(option)}
-                        className={`flex-1 py-3 px-4 rounded-xl border-2 font-bold text-sm transition-all duration-200 ${
+                        onClick={() => handleInputSelect(option)}
+                        disabled={connectionStatus !== 'connected'}
+                        className={`flex-1 py-3 px-4 rounded-xl border-2 font-bold text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
                           inputsMode === option
                             ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm'
                             : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
@@ -243,15 +266,8 @@ const Settings = () => {
                   <p className="text-[11px] text-slate-400 font-mono">Register Address: R33</p>
                 </div>
 
-                {/* Buttons */}
-                <div className="pt-4 flex gap-4">
-                  <button
-                    type="submit"
-                    disabled={isLoading || connectionStatus !== 'connected'}
-                    className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-semibold py-3.5 px-6 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isLoading ? 'Writing Parameters...' : 'Write to PLC'}
-                  </button>
+                {/* Cancel Button */}
+                <div className="pt-4 flex justify-end">
                   <button
                     type="button"
                     onClick={handleCancel}
@@ -261,7 +277,7 @@ const Settings = () => {
                   </button>
                 </div>
 
-              </form>
+              </div>
             </div>
           </div>
 

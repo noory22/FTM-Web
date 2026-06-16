@@ -49,7 +49,8 @@ contextBridge.exposeInMainWorld("api", {
 
   // ============= DATA FUNCTIONS =============
   readData: () => ipcRenderer.invoke("read-data"),
-  writeCalibrationSettings: (settings) => ipcRenderer.invoke("write-calibration-settings", settings),
+  writeWeightRange: (value) => ipcRenderer.invoke("write-weight-range", value),
+  writeInputsMode: (value) => ipcRenderer.invoke("write-inputs-mode", value),
   // Add this to the exposed API in preload.js
   connectModbus: () => ipcRenderer.invoke("connect-modbus"),
   checkConnection: () => ipcRenderer.invoke("check-connection"),
