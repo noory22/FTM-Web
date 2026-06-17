@@ -124,7 +124,7 @@ const COIL_LLS = 3922; // Modbus address for M1922 (2000 + 1922)
 // Manual Mode Coils
 const COIL_MANUAL = 2001;          // M1
 const COIL_MANUAL_EXIT = 2002;     // M2
-const COIL_HOME = 2003;             // M3
+const COIL_HOME = 2300;             // M3
 const COIL_TARE = 2004;            // M4
 const COIL_CLAMP = 1003;           // X3
 const COIL_PROBE_UP = 1006;        // X6
