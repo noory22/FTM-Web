@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Power, Usb, Move, TrendingUp, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Power, Usb, Move, TrendingUp, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, AlertTriangle, Home, Scale, Ruler, Activity, MoveHorizontal } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
@@ -46,6 +46,8 @@ const Manual = () => {
   const [probeUp, setProbeUp] = useState(false);
   const [catheterForward, setCatheterForward] = useState(false);
   const [catheterBack, setCatheterBack] = useState(false);
+  const [homeActive, setHomeActive] = useState(false);
+  const [tareActive, setTareActive] = useState(false);
 
   const [connectionStatus, setConnectionStatus] = useState({
     connected: false,
@@ -185,6 +187,54 @@ const Manual = () => {
     setProbeUp(false);
     setCatheterForward(false);
     setCatheterBack(false);
+    setHomeActive(false);
+    setTareActive(false);
+  };
+
+  // Handle Home button
+  const handleHome = async () => {
+    if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+
+    try {
+      setHomeActive(true);
+      const result = await window.api.home();
+      if (result.success) {
+        console.log("Home command executed");
+        // Auto-reset after 3 seconds
+        setTimeout(() => {
+          setHomeActive(false);
+        }, 3000);
+      } else {
+        setHomeActive(false);
+        console.error("Home command failed:", result.message);
+      }
+    } catch (error) {
+      console.error("Home error:", error);
+      setHomeActive(false);
+    }
+  };
+
+  // Handle Tare button
+  const handleTare = async () => {
+    if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+
+    try {
+      setTareActive(true);
+      const result = await window.api.tare();
+      if (result.success) {
+        console.log("Tare command executed");
+        // Auto-reset after 3 seconds
+        setTimeout(() => {
+          setTareActive(false);
+        }, 3000);
+      } else {
+        setTareActive(false);
+        console.error("Tare command failed:", result.message);
+      }
+    } catch (error) {
+      console.error("Tare error:", error);
+      setTareActive(false);
+    }
   };
 
   // Handle Probe Down with continuous movement
@@ -483,9 +533,18 @@ const Manual = () => {
       <div className="w-full mx-auto">
 
         {/* ══════════════ HEADER ══════════════ */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-end gap-4 mb-6 md:mb-8">
+        {/* <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6 md:mb-8">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleBackButton}
+              className="p-2 hover:bg-slate-200 rounded-lg transition-colors"
+            >
+              <ArrowLeft className="w-6 h-6 text-slate-600" />
+            </button>
+            <h1 className="text-2xl font-bold text-slate-800">Manual Mode</h1>
+          </div>
 
-          {/* <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             {emergencyActive && (
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-100 text-red-700 border border-red-300 animate-pulse">
                 <AlertTriangle className="w-4 h-4" />
@@ -514,16 +573,46 @@ const Manual = () => {
                 Reconnect
               </button>
             )}
+          </div>
+        </div> */}
 
-            <button
-              onClick={() => {
-                if (window.confirm('Are you sure you want to exit?')) window.close();
-              }}
-              className="group bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl lg:rounded-2xl w-8 h-8 sm:w-12 sm:h-12 lg:w-14 lg:h-14 flex items-center justify-center transition-all duration-300 hover:-translate-y-1 shadow-lg hover:shadow-xl border border-red-400/30 shrink-0"
-            >
-              <Power className="w-3 h-3 sm:w-5 sm:h-5 lg:w-6 lg:h-6 group-hover:scale-110 transition-transform duration-300" />
-            </button>
-          </div> */}
+        {/* ══════════════ LIVE READINGS ROW ══════════════ */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div className="bg-white rounded-xl shadow-lg border border-slate-200 p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Ruler className="w-5 h-5 text-blue-600" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Probe Distance</p>
+                <p className="text-2xl font-bold text-slate-800">{probeDistance} <span className="text-sm font-medium text-slate-500">mm</span></p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-lg border border-slate-200 p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <MoveHorizontal className="w-5 h-5 text-purple-600" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Catheter Distance</p>
+                <p className="text-2xl font-bold text-slate-800">{catheterDistance} <span className="text-sm font-medium text-slate-500">mm</span></p>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-lg border border-slate-200 p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-100 rounded-lg">
+                <Activity className="w-5 h-5 text-red-600" />
+              </div>
+              <div>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Force</p>
+                <p className="text-2xl font-bold text-slate-800">{force} <span className="text-sm font-medium text-slate-500">mN</span></p>
+              </div>
+            </div>
+          </div>
         </div>
 
         {/* ══════════════ MAIN GRID ══════════════ */}
@@ -568,7 +657,7 @@ const Manual = () => {
           </div>
           {/* end left column */}
 
-          {/* ══════════ RIGHT: [Probe | Clamp] + Catheter ══════════ */}
+          {/* ══════════ RIGHT: [Probe | Clamp] + Catheter + Home/Tare ══════════ */}
           <div className="flex flex-col gap-4 md:gap-6 w-full">
 
             {/* Top row: Probe + Clamp side by side */}
@@ -584,13 +673,18 @@ const Manual = () => {
                   <div className="flex flex-col items-center gap-2">
                     <div
                       className={circleClass(probeUp, 'bg-red-500 border-red-600')}
+                      onMouseDown={handleProbeUpStart}
+                      onMouseUp={handleProbeStop}
+                      onMouseLeave={handleProbeStop}
+                      onTouchStart={handleProbeUpStart}
+                      onTouchEnd={handleProbeStop}
                     >
                       <ChevronUp className="w-7 h-7 sm:w-8 sm:h-8" />
                       {probeUp && (
                         <div className="absolute -inset-1 bg-red-500 rounded-full animate-ping opacity-30 pointer-events-none" />
                       )}
                     </div>
-                    {/* <span className="text-xs font-medium text-slate-600">Probe Up (M4)</span> */}
+                    <span className="text-xs font-medium text-slate-600">Probe Up</span>
                   </div>
 
                   <div className="w-full border-t border-slate-100" />
@@ -599,12 +693,18 @@ const Manual = () => {
                   <div className="flex flex-col items-center gap-2">
                     <div
                       className={circleClass(probeDown, 'bg-blue-500 border-blue-600')}
+                      onMouseDown={handleProbeDownStart}
+                      onMouseUp={handleProbeStop}
+                      onMouseLeave={handleProbeStop}
+                      onTouchStart={handleProbeDownStart}
+                      onTouchEnd={handleProbeStop}
                     >
                       <ChevronDown className="w-7 h-7 sm:w-8 sm:h-8" />
                       {probeDown && (
                         <div className="absolute -inset-1 bg-blue-500 rounded-full animate-ping opacity-30 pointer-events-none" />
                       )}
                     </div>
+                    <span className="text-xs font-medium text-slate-600">Probe Down</span>
                   </div>
 
                 </div>
@@ -615,9 +715,10 @@ const Manual = () => {
               <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6 flex-1 min-w-0">
                 <h3 className="text-base font-semibold text-slate-800 mb-1 text-center">Clamp</h3>
 
-                <div className="flex justify-center">
+                <div className="flex flex-col items-center gap-4">
                   <div
                     className={circleClass(clamp, 'bg-purple-500 border-purple-600')}
+                    onClick={handleClampToggle}
                   >
                     <img
                       src={clampIcon}
@@ -629,10 +730,10 @@ const Manual = () => {
                       <div className="absolute -inset-1 bg-purple-500 rounded-full animate-ping opacity-30 pointer-events-none" />
                     )}
                   </div>
-                </div>
 
-                <div className="mt-4 flex justify-center">
-                  {statusBadge(clamp, 'bg-purple-100 text-purple-700', 'bg-slate-100 text-slate-500', 'CLAMPED', 'UNCLAMPED')}
+                  <div className="flex justify-center">
+                    {statusBadge(clamp, 'bg-purple-100 text-purple-700', 'bg-slate-100 text-slate-500', 'CLAMPED', 'UNCLAMPED')}
+                  </div>
                 </div>
               </div>
               {/* end Clamp card */}
@@ -640,15 +741,16 @@ const Manual = () => {
             </div>
             {/* end top row */}
 
-            {/* Catheter card — full width below */}
+            {/* Catheter card — full width */}
             <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
-              <h3 className="text-base font-semibold text-slate-800 mb-1 text-center">Catheter</h3>
-              <div className="flex items-start justify-around gap-4">
+              <h3 className="text-base font-semibold text-slate-800 mb-3 text-center">Catheter</h3>
+              <div className="flex items-center justify-around gap-4">
 
                 {/* Catheter Forward - M7 */}
                 <div className="flex flex-col items-center gap-2">
                   <div
                     className={circleClass(catheterForward, 'bg-green-500 border-green-600')}
+                    onClick={handleCatheterForward}
                   >
                     <ChevronLeft className="w-7 h-7 sm:w-8 sm:h-8" />
                     {catheterForward && (
@@ -664,6 +766,7 @@ const Manual = () => {
                 <div className="flex flex-col items-center gap-2">
                   <div
                     className={circleClass(catheterBack, 'bg-amber-500 border-amber-600')}
+                    onClick={handleCatheterBackward}
                   >
                     <ChevronRight className="w-7 h-7 sm:w-8 sm:h-8" />
                     {catheterBack && (
@@ -676,6 +779,47 @@ const Manual = () => {
               </div>
             </div>
             {/* end Catheter card */}
+
+            {/* NEW: Home & Tare buttons row */}
+            <div className="bg-white rounded-xl md:rounded-2xl shadow-xl border border-slate-200 p-4 md:p-6">
+              <h3 className="text-base font-semibold text-slate-800 mb-3 text-center">System Controls</h3>
+              <div className="flex items-center justify-around gap-4">
+
+                {/* Home Button */}
+                <div className="flex flex-col items-center gap-2">
+                  <div
+                    className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 flex items-center justify-center transition-all duration-300 shadow-lg ${homeActive ? 'bg-indigo-500 border-indigo-600 text-white' : 'bg-white border-slate-300 text-slate-400'} ${(!connectionStatus.connected || emergencyActive || !manualModeActive) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-slate-400'}`}
+                    onClick={handleHome}
+                  >
+                    <Home className="w-8 h-8 sm:w-10 sm:h-10" />
+                    {homeActive && (
+                      <div className="absolute -inset-1 bg-indigo-500 rounded-full animate-ping opacity-30 pointer-events-none" />
+                    )}
+                  </div>
+                  <span className="text-xs font-medium text-slate-600">Homing</span>
+                  {statusBadge(homeActive, 'bg-indigo-100 text-indigo-700', 'bg-slate-100 text-slate-500', 'ACTIVE', 'READY')}
+                </div>
+
+                <div className="self-center w-px h-20 bg-slate-100" />
+
+                {/* Tare Button */}
+                <div className="flex flex-col items-center gap-2">
+                  <div
+                    className={`relative w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 flex items-center justify-center transition-all duration-300 shadow-lg ${tareActive ? 'bg-teal-500 border-teal-600 text-white' : 'bg-white border-slate-300 text-slate-400'} ${(!connectionStatus.connected || emergencyActive || !manualModeActive) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-slate-400'}`}
+                    onClick={handleTare}
+                  >
+                    <Scale className="w-8 h-8 sm:w-10 sm:h-10" />
+                    {tareActive && (
+                      <div className="absolute -inset-1 bg-teal-500 rounded-full animate-ping opacity-30 pointer-events-none" />
+                    )}
+                  </div>
+                  <span className="text-xs font-medium text-slate-600">Tare</span>
+                  {statusBadge(tareActive, 'bg-teal-100 text-teal-700', 'bg-slate-100 text-slate-500', 'ACTIVE', 'READY')}
+                </div>
+
+              </div>
+            </div>
+            {/* end Home & Tare buttons row */}
 
           </div>
           {/* end right column */}

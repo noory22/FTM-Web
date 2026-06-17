@@ -54,6 +54,27 @@ const getStatusMeta = (status) =>
 // Safe statuses where back / navigation is allowed
 const SAFE_STATUSES = new Set(["IDLE", "READY", "COMPLETED", "UNKNOWN"]);
 
+// Statuses where START is allowed
+const START_ALLOWED = new Set(["IDLE", "READY"]);
+
+// Statuses where PAUSE is allowed
+const PAUSE_ALLOWED = new Set(["SEARCHING CONTACT", "RUNNING"]);
+
+// Statuses where RESUME is allowed
+const RESUME_ALLOWED = new Set(["PAUSED"]);
+
+// Statuses where RESET is allowed
+const RESET_ALLOWED = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING", "COMPLETED"]);
+
+// Statuses where graph data should be collected
+const GRAPH_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
+
+// Statuses where CSV logging should be active
+const CSV_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
+
+// Statuses that indicate test in progress (block navigation)
+const TEST_IN_PROGRESS = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING"]);
+
 const ProcessMode = () => {
   const navigate = useNavigate();
 
@@ -84,6 +105,9 @@ const ProcessMode = () => {
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showConfigPanel, setShowConfigPanel] = useState(false);
   const prevStatusRef = useRef("IDLE");
+  const [isPaused, setIsPaused] = useState(false);
+  const [isTestCompleted, setIsTestCompleted] = useState(false);
+  const [completedTimer, setCompletedTimer] = useState(null);
 
   // ── Screen size ───────────────────────────────────────────────────────────────
   const [screenW, setScreenW] = useState(window.innerWidth);
@@ -131,6 +155,7 @@ const ProcessMode = () => {
         }
       };
       deactivateModes();
+      if (completedTimer) clearTimeout(completedTimer);
     };
   }, []);
 
@@ -198,8 +223,8 @@ const ProcessMode = () => {
         if (!data?.success) return;
 
         const status = data.machineStatusDisplay || "IDLE";
-        const probeDistance = data.distance !== undefined && data.distance !== null
-          ? parseFloat(data.distance)
+        const probeDistance = data.test_Dist !== undefined && data.test_Dist !== null
+          ? parseFloat(data.test_Dist)
           : null;
         const catheterDistance = data.catheterDistance !== undefined && data.catheterDistance !== null
           ? parseFloat(data.catheterDistance)
@@ -217,47 +242,94 @@ const ProcessMode = () => {
           stepsToMove: stepsToMove,
         });
 
-        // ── Auto CSV: start when RUNNING, stop when COMPLETED or IDLE ───────────
         const prev = prevStatusRef.current;
-        if (status === "RUNNING" && prev !== "RUNNING") {
-          startCsvLogging();
-        }
-        if ((status === "COMPLETED" || status === "IDLE") && isLogging) {
-          stopCsvLogging();
-        }
         prevStatusRef.current = status;
 
-        // ── Chart & log while RUNNING / SEARCHING CONTACT / RETRACTING ───────────
-        const activeStatuses = new Set(["SEARCHING CONTACT", "RUNNING", "RETRACTING"]);
-        if (activeStatuses.has(status) && probeDistance !== null && force !== null) {
-          setChartData((prev) => [
-            ...prev,
-            { x: probeDistance, y: force },
-          ]);
+        // ── Handle status transitions ────────────────────────────────────────
 
-          // CSV row append
-          if (
-            isLogging &&
-            (lastLogRef.current.distance !== probeDistance ||
-              lastLogRef.current.force !== force)
-          ) {
-            try {
-              await window.api.appendCSV({
-                data: { distance: probeDistance, force_mN: force, temperature: 0 },
-                config: selectedConfig,
-              });
-              lastLogRef.current = { distance: probeDistance, force };
-            } catch (e) {
-              console.error("CSV append error:", e);
+        // Check if test completed (status changes from RUNNING to HOMING or COMPLETED)
+        if ((prev === "RUNNING" || prev === "SEARCHING CONTACT") && status === "HOMING") {
+          console.log("📊 Test completed - machine homing");
+          setIsTestCompleted(true);
+          // Stop CSV logging
+          if (isLogging) {
+            await stopCsvLogging();
+          }
+          // Clear chart data when test completes
+          setChartData([]);
+          lastLogRef.current = { distance: null, force: null };
+          
+          // After homing completes, status will change to READY or COMPLETED
+        }
+
+        // When status becomes READY after HOMING, set COMPLETED briefly then READY
+        if (prev === "HOMING" && status === "READY" && isTestCompleted) {
+          console.log("✅ Homing complete - showing COMPLETED status");
+          // Force status to COMPLETED for 1 second
+          setLiveData(prevData => ({
+            ...prevData,
+            machineStatus: "COMPLETED"
+          }));
+          
+          // After 1 second, change to READY
+          if (completedTimer) clearTimeout(completedTimer);
+          const timer = setTimeout(() => {
+            setLiveData(prevData => ({
+              ...prevData,
+              machineStatus: "READY"
+            }));
+            setIsTestCompleted(false);
+            setCompletedTimer(null);
+          }, 1000);
+          setCompletedTimer(timer);
+        }
+
+        // Handle pause state
+        if (status === "PAUSED") {
+          setIsPaused(true);
+        } else {
+          setIsPaused(false);
+        }
+
+        // ── Chart & log while in active statuses ────────────────────────────
+        if (GRAPH_ACTIVE.has(status) && probeDistance !== null && force !== null) {
+          // Only add to chart if not paused
+          if (!isPaused) {
+            setChartData((prev) => [
+              ...prev,
+              { x: probeDistance, y: force },
+            ]);
+
+            // CSV row append
+            if (
+              isLogging &&
+              (lastLogRef.current.distance !== probeDistance ||
+                lastLogRef.current.force !== force)
+            ) {
+              try {
+                await window.api.appendCSV({
+                  data: { distance: probeDistance, force_mN: force, temperature: 0 },
+                  config: selectedConfig,
+                });
+                lastLogRef.current = { distance: probeDistance, force };
+              } catch (e) {
+                console.error("CSV append error:", e);
+              }
             }
           }
         }
 
-        // ── Clear chart on reset (status goes to HOMING/IDLE from non-idle) ─────
-        if (status === "HOMING" && prev !== "HOMING") {
+        // ── Auto CSV: start when entering SEARCHING CONTACT or RUNNING ──────
+        if (CSV_ACTIVE.has(status) && !isLogging && !isPaused) {
+          await startCsvLogging();
+        }
+
+        // ── Clear chart on reset ─────────────────────────────────────────────
+        if (status === "HOMING" && prev !== "HOMING" && !isTestCompleted) {
           setChartData([]);
           lastLogRef.current = { distance: null, force: null };
         }
+
       } catch (e) {
         console.error("Poll error:", e);
       }
@@ -266,13 +338,19 @@ const ProcessMode = () => {
     const intervalId = setInterval(poll, 100);
     poll();
     return () => clearInterval(intervalId);
-  }, [isConnected, isLogging, selectedConfig, startCsvLogging, stopCsvLogging]);
+  }, [isConnected, isLogging, selectedConfig, startCsvLogging, stopCsvLogging, isPaused, isTestCompleted, completedTimer]);
 
   // ── Button handlers ───────────────────────────────────────────────────────────
   const handleStart = async () => {
     try {
       const res = await window.api.start();
-      if (!res?.success) console.error("Start failed:", res?.message);
+      if (res?.success) {
+        // Reset paused state
+        setIsPaused(false);
+        console.log("✅ START command sent to PLC");
+      } else {
+        console.error("Start failed:", res?.message);
+      }
     } catch (e) {
       console.error("Start error:", e);
     }
@@ -281,9 +359,28 @@ const ProcessMode = () => {
   const handlePause = async () => {
     try {
       const res = await window.api.stop();
-      if (!res?.success) console.error("Pause failed:", res?.message);
+      if (res?.success) {
+        setIsPaused(true);
+        console.log("⏸️ PAUSE command sent to PLC");
+      } else {
+        console.error("Pause failed:", res?.message);
+      }
     } catch (e) {
       console.error("Pause error:", e);
+    }
+  };
+
+  const handleResume = async () => {
+    try {
+      const res = await window.api.start();
+      if (res?.success) {
+        setIsPaused(false);
+        console.log("▶️ RESUME command sent to PLC");
+      } else {
+        console.error("Resume failed:", res?.message);
+      }
+    } catch (e) {
+      console.error("Resume error:", e);
     }
   };
 
@@ -293,7 +390,14 @@ const ProcessMode = () => {
       if (res?.success) {
         setChartData([]);
         lastLogRef.current = { distance: null, force: null };
+        setIsPaused(false);
+        setIsTestCompleted(false);
+        if (completedTimer) {
+          clearTimeout(completedTimer);
+          setCompletedTimer(null);
+        }
         await stopCsvLogging();
+        console.log("🔄 RESET command sent to PLC");
       } else {
         console.error("Reset failed:", res?.message);
       }
@@ -302,11 +406,18 @@ const ProcessMode = () => {
     }
   };
 
-  // Button enable rules driven purely by R11 status
+  // Button enable rules
   const status = liveData.machineStatus;
-  const canStart  = isConnected && ["IDLE", "READY", "SEARCHING CONTACT"].includes(status);
-  const canPause  = isConnected && ["RUNNING", "SEARCHING CONTACT", "RETRACTING"].includes(status);
-  const canReset  = isConnected && SAFE_STATUSES.has(status) && status !== "UNKNOWN";
+  const currentStatus = status; // Use actual status from PLC
+  
+  // Determine button states
+  const canStart = isConnected && START_ALLOWED.has(currentStatus);
+  const canPause = isConnected && PAUSE_ALLOWED.has(currentStatus) && !isPaused;
+  const canResume = isConnected && isPaused && currentStatus === "PAUSED";
+  const canReset = isConnected && (RESET_ALLOWED.has(currentStatus) || currentStatus === "READY");
+
+  // Check if test is in progress (block navigation)
+  const isTestInProgress = TEST_IN_PROGRESS.has(currentStatus) || isPaused;
 
   // ── Chart config ──────────────────────────────────────────────────────────────
   const chartConfig = {
@@ -387,7 +498,7 @@ const ProcessMode = () => {
   };
 
   // ── Status badge ──────────────────────────────────────────────────────────────
-  const meta = getStatusMeta(status);
+  const meta = getStatusMeta(currentStatus);
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -416,7 +527,7 @@ const ProcessMode = () => {
                 ["Sample Placement", "Verify sample is properly positioned and secured."],
                 ["Force Sensor", "Verify force reading is at baseline (near 0 mN)."],
                 ["Monitor Graph", "Watch real-time Force vs Probe Distance plot for anomalies."],
-                ["STOP (Pause)", "Use PAUSE button if any issues are observed."],
+                ["PAUSE (Stop)", "Use PAUSE button if any issues are observed."],
                 ["Stay Present", "Never leave the machine unattended during operation."],
               ].map(([title, body]) => (
                 <div key={title} className="flex items-start space-x-3">
@@ -454,17 +565,19 @@ const ProcessMode = () => {
           <div className="flex items-center space-x-3 min-w-0">
             <div className="min-w-0">
               <h1 className={`${isXl ? "text-2xl" : "text-xl"} font-bold bg-gradient-to-r from-gray-900 to-blue-700 bg-clip-text text-transparent truncate`}>
-                Process Mode
+                {is3Point ? "3-Point Test" : "2-Point Test"}
               </h1>
               {selectedConfig && (
                 <p className="text-blue-600 text-xs mt-0.5 font-medium truncate hidden sm:block">
-                  {selectedConfig.testType === "3-point" ? "3-Point Test" : "2-Point Test"} — {selectedConfig.configName}
+                  {selectedConfig.configName}
                 </p>
               )}
             </div>
           </div>
 
           <div className="flex items-center space-x-2 shrink-0">
+           
+
             {/* Info button */}
             <button
               onClick={() => setShowInfoModal(true)}
@@ -480,7 +593,7 @@ const ProcessMode = () => {
                 className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center transition-all hover:-translate-y-0.5 shadow-lg border border-indigo-400/30"
                 title="View configuration"
               >
-                <ArrowRight className="w-4 h-4 sm:w-5 sm:h-5" />
+                <Activity className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
             )}
           </div>
@@ -498,13 +611,21 @@ const ProcessMode = () => {
             <div className="flex items-center space-x-3">
               <div className={`w-2.5 h-2.5 rounded-full ${meta.dot}`} />
               <span className="text-xs text-gray-500 font-medium uppercase tracking-wider">Machine Status</span>
-              <span className={`text-sm font-bold ${meta.color}`}>{status}</span>
+              <span className={`text-sm font-bold ${meta.color}`}>
+                {isPaused ? "PAUSED" : currentStatus}
+              </span>
             </div>
             <div className="flex items-center space-x-3">
               {isLogging && (
                 <span className="flex items-center space-x-1.5 text-xs font-semibold text-red-600 bg-red-50 border border-red-200 px-2.5 py-1 rounded-lg">
                   <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                   <span>LOGGING</span>
+                </span>
+              )}
+              {isPaused && (
+                <span className="flex items-center space-x-1.5 text-xs font-semibold text-yellow-600 bg-yellow-50 border border-yellow-200 px-2.5 py-1 rounded-lg">
+                  <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
+                  <span>PAUSED</span>
                 </span>
               )}
               {selectedConfig && (
@@ -575,7 +696,9 @@ const ProcessMode = () => {
               <h3 className="text-base font-bold text-gray-900 mb-3">Machine Status</h3>
               <div className={`flex items-center space-x-3 rounded-xl px-4 py-3 border ${meta.badge} border-current/20`}>
                 <div className={`w-3 h-3 rounded-full shrink-0 ${meta.dot}`} />
-                <span className={`text-lg font-bold tracking-wide ${meta.color}`}>{status}</span>
+                <span className={`text-lg font-bold tracking-wide ${meta.color}`}>
+                  {isPaused ? "PAUSED" : currentStatus}
+                </span>
               </div>
             </div>
 
@@ -590,10 +713,13 @@ const ProcessMode = () => {
           <ControlButtons
             onStart={handleStart}
             onPause={handlePause}
+            onResume={handleResume}
             onReset={handleReset}
             canStart={canStart}
             canPause={canPause}
+            canResume={canResume}
             canReset={canReset}
+            isPaused={isPaused}
           />
         </div>
       </main>
@@ -605,10 +731,13 @@ const ProcessMode = () => {
             <ControlButtons
               onStart={handleStart}
               onPause={handlePause}
+              onResume={handleResume}
               onReset={handleReset}
               canStart={canStart}
               canPause={canPause}
+              canResume={canResume}
               canReset={canReset}
+              isPaused={isPaused}
             />
           </div>
         </div>
@@ -690,45 +819,64 @@ const InfoRow = ({ label, value, highlight, accent }) => (
   </div>
 );
 
-/** The three control buttons */
-const ControlButtons = ({ onStart, onPause, onReset, canStart, canPause, canReset }) => (
+/** The three control buttons with PAUSE/RESUME toggle */
+const ControlButtons = ({ onStart, onPause, onResume, onReset, canStart, canPause, canResume, canReset, isPaused }) => (
   <div className="flex space-x-2 sm:space-x-3 max-w-2xl mx-auto">
-    {/* START — M10 */}
-    <button
-      id="btn-start"
-      onClick={onStart}
-      disabled={!canStart}
-      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${canStart
-        ? "bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-xl shadow-green-500/25 border border-green-400/30 hover:scale-[1.02]"
-        : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
-      }`}
-    >
-      <Play className="w-4 h-4 sm:w-5 sm:h-5" />
-      <span>START</span>
-    </button>
+    {/* START / RESUME button */}
+    {isPaused ? (
+      <button
+        id="btn-resume"
+        onClick={onResume}
+        disabled={!canResume}
+        className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${
+          canResume
+            ? "bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-xl shadow-green-500/25 border border-green-400/30 hover:scale-[1.02]"
+            : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
+        }`}
+      >
+        <Play className="w-4 h-4 sm:w-5 sm:h-5" />
+        <span>RESUME</span>
+      </button>
+    ) : (
+      <button
+        id="btn-start"
+        onClick={onStart}
+        disabled={!canStart}
+        className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${
+          canStart
+            ? "bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-xl shadow-green-500/25 border border-green-400/30 hover:scale-[1.02]"
+            : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
+        }`}
+      >
+        <Play className="w-4 h-4 sm:w-5 sm:h-5" />
+        <span>START</span>
+      </button>
+    )}
 
-    {/* PAUSE — M11 */}
+    {/* PAUSE button */}
     <button
       id="btn-pause"
       onClick={onPause}
       disabled={!canPause}
-      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${canPause
-        ? "bg-gradient-to-br from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white shadow-xl shadow-yellow-500/25 border border-yellow-400/30 hover:scale-[1.02]"
-        : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
+      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${
+        canPause
+          ? "bg-gradient-to-br from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white shadow-xl shadow-yellow-500/25 border border-yellow-400/30 hover:scale-[1.02]"
+          : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
       }`}
     >
       <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
       <span>PAUSE</span>
     </button>
 
-    {/* RESET — M12 */}
+    {/* RESET button */}
     <button
       id="btn-reset"
       onClick={onReset}
       disabled={!canReset}
-      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${canReset
-        ? "bg-gradient-to-br from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-xl shadow-red-500/25 border border-red-400/30 hover:scale-[1.02]"
-        : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
+      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${
+        canReset
+          ? "bg-gradient-to-br from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-xl shadow-red-500/25 border border-red-400/30 hover:scale-[1.02]"
+          : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
       }`}
     >
       <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />

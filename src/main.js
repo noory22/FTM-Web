@@ -124,27 +124,32 @@ const COIL_LLS = 3922; // Modbus address for M1922 (2000 + 1922)
 // Manual Mode Coils
 const COIL_MANUAL = 2001;          // M1
 const COIL_MANUAL_EXIT = 2002;     // M2
-const COIL_CLAMP = 2003;           // M3
-const COIL_PROBE_UP = 2004;        // M4
-const COIL_PROBE_DOWN = 2005;      // M5
-const COIL_CATHETER_BACK = 2006;   // M6
-const COIL_CATHETER_FORWARD = 2007; // M7
+const COIL_HOME = 2003;             // M3
+const COIL_TARE = 2004;            // M4
+const COIL_CLAMP = 1003;           // X3
+const COIL_PROBE_UP = 1006;        // X6
+const COIL_PROBE_DOWN = 1005;      // X5
+const COIL_CATHETER_BACK = 1008;   // X8
+const COIL_CATHETER_FORWARD = 1007; // X7
 const COIL_2POINT = 2008;          // M8
 const COIL_3POINT = 2009;          // M9
 const COIL_START = 2010;           // M10
 const COIL_STOP = 2011;            // M11
 const COIL_RESET = 2012;           // M12
 
-const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe Distance
+const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe DistanceG
+const TEST_DIST = 73; // 1 register (16-bit integer) — TEST Distance that used using 2 & 3 point mode
 const REG_FORCE = 54;     // 2 registers (32-bit float)  — Force
 const REG_MANUAL_DISTANCE = 71;   // 1 register (16-bit integer) — Catheter Distance (R71)
 const REG_MACHINE_STATUS = 11;    // 1 register (16-bit integer) — Machine Status (R11): 1=IDLE, 2=HOMING, 3=READY
 const REG_STEPS = 72;             // 1 register (16-bit integer) — No. of Steps to move (R72)
+const REG_SETTINGS_FORCE = 30;    // 1 register (16-bit integer) — Settings Force (R30, grams)
 
 // -------------------------
 // Helper: Convert two 16-bit Modbus registers → 32-bit float (Little-Endian word order)
 // Most Delta PLCs send floats as: word[0] = low word, word[1] = high word
 // -------------------------
+// Helper function declaration has been simplified
 function registersToFloat32LE(lowWord, highWord) {
   const buf = new ArrayBuffer(4);
   const view = new DataView(buf);
@@ -170,6 +175,7 @@ const client = new ModbusRTU();
 // PLC Cache & Command Queue
 let plcState = {
   distance: 0,        // R70  — Probe Distance (mm)
+  test_Dist: 0,        // R73  — TEST Distance (mm)
   force_mN: 0,        // R54  — Force (mN, 32-bit float)
   catheterDistance: 0,// R71  — Catheter Distance (mm)
   machineStatus: 1,   // R11  — Machine Status (1=IDLE, 2=HOMING, 3=READY, etc.)
@@ -187,6 +193,7 @@ let plcState = {
   weightRange: 0,     // R32  — Weight Range (0-1000)
   inputsMode: 0,      // R33  — Just 3 inputs (0,1,2)
   realtimePlcValue: 0,// R36  — Real-time changing value on PLC
+  settingsForce: 0,   // R30  — Force for Settings screen (grams)
   lastUpdated: 0
 };
 
@@ -424,7 +431,7 @@ async function startCSVLogging(config) {
 
     // CSV HEADER
     csvStream.write(
-      "Timestamp,Distance(mm),Force(mN),Temperature,ConfigName,PathLength,ThresholdForce,InsertionStrokeLength,RetractionStrokelength,NumberOfCurves,CurveDistances\n"
+      "Timestamp,Distance(mm),Force(mN),Temperature,ConfigName,PathLength,ThresholdForce\n"
     );
 
     return { success: true, filePath: csvFilePath };
@@ -447,11 +454,7 @@ async function appendCSVData(data, config) {
       data.temperature,
       config.configName,
       config.pathlength,
-      config.thresholdForce,
-      config.insertionLength,
-      config.retractionLength,
-      config.numberOfCurves,
-      JSON.stringify(config.curveDistances || {})
+      config.thresholdForce
     ].join(",") + "\n";
 
     csvStream.write(row);
@@ -718,6 +721,240 @@ async function safeReadRegisters(address, count) {
 // -------------------------
 // Background Modbus Processing Loop
 // -------------------------
+// let consecutiveErrors = 0;
+
+// async function processModbusLoop() {
+//   if (isLoopRunning) return;
+//   isLoopRunning = true;
+//   console.log("🔄 Background Modbus Loop Started");
+
+//   while (true) {
+//     // 0. Critical Check: Unexpected Port Closure
+//     if (isConnected && !client.isOpen) {
+//       console.error("❌ Port closed unexpectedly (client.isOpen is false). Triggering disconnect.");
+//       isConnected = false;
+//       consecutiveErrors = 0;
+//       if (mainWindow && !mainWindow.isDestroyed()) {
+//         mainWindow.webContents.send('modbus-status', 'disconnected');
+//       }
+//     }
+
+//     // 1. Check Connection
+//     if (!isConnected || !client.isOpen) {
+//       // Wait before checking again
+//       await new Promise(resolve => setTimeout(resolve, 500));
+//       continue;
+//     }
+
+//     try {
+//       // 2. Process High Priority Commands FIRST
+//       if (commandQueue.length > 0) {
+//         const cmd = commandQueue.shift();
+//         console.log(`🚀 Loop: Executing command from queue: ${cmd.commandName} (remaining: ${commandQueue.length})`);
+//         try {
+//           const result = await cmd.task();
+//           console.log(`✅ Loop: Command ${cmd.commandName} execution success!`);
+//           cmd.resolve(result);
+//         } catch (e) {
+//           console.error(`❌ Loop: Command ${cmd.commandName} failed:`, e.message);
+//           cmd.reject(e);
+//         }
+//         continue;
+//       }
+
+//       // 3. Read Data Cycle
+//       let cycleSuccess = false;
+//       let currentEmerState = lastEmerState;
+//       let currentPowState = lastPowState;
+
+//       // Read COIL_LLS
+//       try {
+//         const llsResult = await client.readCoils(COIL_LLS, 1);
+//         const currentLLSState = Boolean(llsResult.data[0]);
+//         plcState.coilLLS = currentLLSState;
+//         cycleSuccess = true;
+//         if (currentLLSState !== lastLLSState) {
+//           if (mainWindow && !mainWindow.isDestroyed()) {
+//             mainWindow.webContents.send('lls-status', currentLLSState.toString());
+//           }
+//           lastLLSState = currentLLSState;
+//           lastPulseTime = Date.now(); // Update pulse timer on transition
+//         }
+//       } catch (e) { }
+
+//       // Read Mode and Control Coils (Feedback Loop M1-M9)
+//       try {
+//         const ctrlRes = await client.readCoils(COIL_MANUAL, 9);
+//         plcState.manual = Boolean(ctrlRes.data[0]);          // M1
+//         plcState.manualExit = Boolean(ctrlRes.data[1]);      // M2
+//         plcState.clamp = Boolean(ctrlRes.data[2]);           // M3
+//         plcState.probeUp = Boolean(ctrlRes.data[3]);         // M4
+//         plcState.probeDown = Boolean(ctrlRes.data[4]);       // M5
+//         plcState.catheterBack = Boolean(ctrlRes.data[5]);    // M6
+//         plcState.catheterForward = Boolean(ctrlRes.data[6]); // M7
+//         plcState.twoPoint = Boolean(ctrlRes.data[7]);        // M8
+//         plcState.threePoint = Boolean(ctrlRes.data[8]);      // M9
+//       } catch (e) { }
+
+//       // Read Safety Coils
+//       try {
+//         const emerResult = await client.readCoils(COIL_EMER, 1);
+//         currentEmerState = Boolean(emerResult.data[0]);
+//         cycleSuccess = true;
+//       } catch (e) { }
+
+//       try {
+//         const powResult = await client.readCoils(COIL_POW, 1);
+//         currentPowState = !Boolean(powResult.data[0]);
+//         cycleSuccess = true;
+//       } catch (e) { }
+
+//       // Global Safety Check
+//       if (currentEmerState || !currentPowState) {
+//         console.log(`🚨 Loop Safety Active: emer=${currentEmerState}, pow=${currentPowState} (currentPowState is !Boolean(COIL_POW) = !${!currentPowState}). isHardwareStopActive=${isHardwareStopActive}`);
+//         await performSafetyStop(currentEmerState ? "Emergency Pressed" : "Power OFF");
+//       } else {
+//         if (isHardwareStopActive) {
+//           console.log(`✅ Loop Safety Cleared: emer=${currentEmerState}, pow=${currentPowState}`);
+//         }
+//         isHardwareStopActive = false;
+//       }
+
+//       // Emit Safety Updates
+//       if (currentEmerState !== lastEmerState) {
+//         if (mainWindow && !mainWindow.isDestroyed()) {
+//           mainWindow.webContents.send('emergency-status', currentEmerState);
+//         }
+//         lastEmerState = currentEmerState;
+//       }
+//       if (currentPowState !== lastPowState) {
+//         if (mainWindow && !mainWindow.isDestroyed()) {
+//           mainWindow.webContents.send('power-status', currentPowState);
+//         }
+//         lastPowState = currentPowState;
+//       }
+
+//       // Read Registers
+//       try {
+//         const dRes = await client.readHoldingRegisters(REG_DISTANCE, 1);
+//         plcState.distance = dRes.data[0];
+//         cycleSuccess = true;
+//       } catch (e) { }
+
+//       try {
+//         const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
+//         const rawLow = fRes.data[0];
+//         const rawHigh = fRes.data[1];
+//         // Try both: plain 16-bit int (rawLow) and 32-bit float interpretations
+//         const asInt16 = rawLow;                              // raw as plain integer
+//         const asScaled = rawLow / 10.0;                      // common: value * 0.1
+//         const floatLE = registersToFloat32LE(rawLow, rawHigh);
+//         const floatBE = registersToFloat32BE(rawLow, rawHigh);
+//         // Log every 5s
+//         if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
+//           console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}]`);
+//           console.log(`   → as Int16:  ${asInt16} mN`);
+//           console.log(`   → as /10:    ${asScaled} mN`);
+//           console.log(`   → as LE f32: ${isFinite(floatLE) ? floatLE.toFixed(3) : 'NaN'} mN`);
+//           console.log(`   → as BE f32: ${isFinite(floatBE) ? floatBE.toFixed(3) : 'NaN'} mN`);
+//           plcState._forceLogTime = Date.now();
+//         }
+//         // Use raw Int16 as default — change to asScaled or floatLE if the value looks wrong
+//         plcState.force_mN = isFinite(asInt16) ? asInt16 : 0;
+//         cycleSuccess = true;
+//       } catch (e) {
+//         console.error('❌ REG_FORCE read error:', e.message);
+//       }
+
+//       try {
+//         const mdRes = await client.readHoldingRegisters(REG_MANUAL_DISTANCE, 1);
+//         const rawCath = mdRes.data[0];
+//         // Store as-is (plain integer, no conversion)
+//         plcState.catheterDistance = rawCath;
+//         if (Date.now() - (plcState._cathLogTime || 0) > 5000) {
+//           console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} mm`);
+//           plcState._cathLogTime = Date.now();
+//         }
+//         cycleSuccess = true;
+//       } catch (e) {
+//         console.error('❌ REG_CATHETER(R71) read error:', e.message);
+//       }
+//       // Read Machine Status Register R11
+//       try {
+//         const statusRes = await client.readHoldingRegisters(REG_MACHINE_STATUS, 1);
+//         plcState.machineStatus = statusRes.data[0];
+//         cycleSuccess = true;
+//         if (Date.now() - (plcState._statusLogTime || 0) > 5000) {
+//           let statusText = '';
+//           switch (plcState.machineStatus) {
+//             case 1: statusText = 'IDLE'; break;
+//             case 2: statusText = 'HOMING'; break;
+//             case 3: statusText = 'READY'; break;
+//             case 4: statusText = 'SEARCHING CONTACT'; break;
+//             case 5: statusText = 'RUNNING'; break;
+//             case 6: statusText = 'RETRACTING'; break;
+//             case 7: statusText = 'COMPLETED'; break;
+//             default: statusText = 'UNKNOWN'; break;
+//           }
+//           console.log(`📊 Machine Status R11: ${plcState.machineStatus} (${statusText})`);
+//           plcState._statusLogTime = Date.now();
+//         }
+//       } catch (e) {
+//         console.error('❌ REG_MACHINE_STATUS(R11) read error:', e.message);
+//       }
+
+//       // Read Steps Register R72
+//       try {
+//         const stepsRes = await client.readHoldingRegisters(REG_STEPS, 1);
+//         plcState.stepsToMove = stepsRes.data[0];
+//         cycleSuccess = true;
+//       } catch (e) {
+//         console.error('❌ REG_STEPS(R72) read error:', e.message);
+//       }
+
+//       // Heartbeat pulse check: if pulse has stopped, trigger disconnection
+//       const HEARTBEAT_TIMEOUT = 4000; // 4 seconds timeout
+//       if (isConnected && (Date.now() - lastPulseTime > HEARTBEAT_TIMEOUT)) {
+//         console.warn(`❌ PLC heartbeat stopped (no transition detected on COIL_LLS for ${Date.now() - lastPulseTime}ms).`);
+//         cycleSuccess = false;
+//       }
+
+//       // 4. Connection Success/Failure Tracking
+//       if (cycleSuccess) {
+//         consecutiveErrors = 0;
+//       } else {
+//         consecutiveErrors++;
+//         if (consecutiveErrors >= 5) {
+//           isConnected = false;
+//           if (mainWindow && !mainWindow.isDestroyed()) {
+//             mainWindow.webContents.send('modbus-status', 'disconnected');
+//           }
+//           try { if (client.isOpen) client.close(); } catch (e) { }
+//           consecutiveErrors = 0;
+//         }
+//       }
+
+//       plcState.lastUpdated = Date.now();
+
+//     } catch (loopError) {
+//       console.error("⚠️ Modbus loop error:", loopError.message);
+//       // Wait a bit longer on error
+//       await new Promise(resolve => setTimeout(resolve, 500));
+//       continue;
+//     }
+
+//     // 5. Yield / Wait
+//     // Short wait to prevent blocking event loop, but keep high poll rate
+//     // 20ms = ~50 polls/sec theoretical max (in practice less due to serial latency)
+//     await new Promise(resolve => setTimeout(resolve, 20));
+//   }
+// }
+
+// // Start the loop
+// processModbusLoop();
+// -------------------------
+// Background Modbus Processing Loop
+// -------------------------
 let consecutiveErrors = 0;
 
 async function processModbusLoop() {
@@ -764,7 +1001,7 @@ async function processModbusLoop() {
       let currentEmerState = lastEmerState;
       let currentPowState = lastPowState;
 
-      // Read COIL_LLS
+      // Read COIL_LLS (Heartbeat - X bit or M bit based on your PLC)
       try {
         const llsResult = await client.readCoils(COIL_LLS, 1);
         const currentLLSState = Boolean(llsResult.data[0]);
@@ -777,38 +1014,76 @@ async function processModbusLoop() {
           lastLLSState = currentLLSState;
           lastPulseTime = Date.now(); // Update pulse timer on transition
         }
-      } catch (e) { }
+      } catch (e) { 
+        console.error('❌ COIL_LLS read error:', e.message);
+      }
 
-      // Read Mode and Control Coils (Feedback Loop M1-M9)
+      // ==============================================
+      // READ M BITS (Internal Relays - Mode Selection)
+      // ==============================================
       try {
         const ctrlRes = await client.readCoils(COIL_MANUAL, 9);
-        plcState.manual = Boolean(ctrlRes.data[0]);          // M1
-        plcState.manualExit = Boolean(ctrlRes.data[1]);      // M2
-        plcState.clamp = Boolean(ctrlRes.data[2]);           // M3
-        plcState.probeUp = Boolean(ctrlRes.data[3]);         // M4
-        plcState.probeDown = Boolean(ctrlRes.data[4]);       // M5
-        plcState.catheterBack = Boolean(ctrlRes.data[5]);    // M6
-        plcState.catheterForward = Boolean(ctrlRes.data[6]); // M7
-        plcState.twoPoint = Boolean(ctrlRes.data[7]);        // M8
-        plcState.threePoint = Boolean(ctrlRes.data[8]);      // M9
-      } catch (e) { }
+        plcState.manual = Boolean(ctrlRes.data[0]);          // M1 (2001)
+        plcState.manualExit = Boolean(ctrlRes.data[1]);      // M2 (2002)
+        // Note: M3-M7 are not used for mode control but kept for compatibility
+        plcState.twoPoint = Boolean(ctrlRes.data[7]);        // M8 (2008)
+        plcState.threePoint = Boolean(ctrlRes.data[8]);      // M9 (2009)
+        cycleSuccess = true;
+      } catch (e) { 
+        console.error('❌ Error reading M bits (Mode selection):', e.message);
+      }
 
-      // Read Safety Coils
+      // ==============================================
+      // READ X BITS (Physical Inputs - Sensors/Switches)
+      // ==============================================
+      try {
+        // Read X3 (Clamp sensor)
+        const clampRes = await client.readCoils(COIL_CLAMP, 1);
+        plcState.clamp = Boolean(clampRes.data[0]);
+        
+        // Read X5 (Probe Down sensor)
+        const probeDownRes = await client.readCoils(COIL_PROBE_DOWN, 1);
+        plcState.probeDown = Boolean(probeDownRes.data[0]);
+        
+        // Read X6 (Probe Up sensor)
+        const probeUpRes = await client.readCoils(COIL_PROBE_UP, 1);
+        plcState.probeUp = Boolean(probeUpRes.data[0]);
+        
+        // Read X7 (Catheter Forward sensor)
+        const cathFwdRes = await client.readCoils(COIL_CATHETER_FORWARD, 1);
+        plcState.catheterForward = Boolean(cathFwdRes.data[0]);
+        
+        // Read X8 (Catheter Back sensor)
+        const cathBackRes = await client.readCoils(COIL_CATHETER_BACK, 1);
+        plcState.catheterBack = Boolean(cathBackRes.data[0]);
+        
+        cycleSuccess = true;
+      } catch (e) { 
+        console.error('❌ Error reading X bits (Physical inputs):', e.message);
+      }
+
+      // ==============================================
+      // READ SAFETY X BITS (Emergency & Power)
+      // ==============================================
       try {
         const emerResult = await client.readCoils(COIL_EMER, 1);
         currentEmerState = Boolean(emerResult.data[0]);
         cycleSuccess = true;
-      } catch (e) { }
+      } catch (e) { 
+        console.error('❌ COIL_EMER read error:', e.message);
+      }
 
       try {
         const powResult = await client.readCoils(COIL_POW, 1);
-        currentPowState = !Boolean(powResult.data[0]);
+        currentPowState = !Boolean(powResult.data[0]);  // Inverted logic for power
         cycleSuccess = true;
-      } catch (e) { }
+      } catch (e) { 
+        console.error('❌ COIL_POW read error:', e.message);
+      }
 
       // Global Safety Check
       if (currentEmerState || !currentPowState) {
-        console.log(`🚨 Loop Safety Active: emer=${currentEmerState}, pow=${currentPowState} (currentPowState is !Boolean(COIL_POW) = !${!currentPowState}). isHardwareStopActive=${isHardwareStopActive}`);
+        console.log(`🚨 Loop Safety Active: emer=${currentEmerState}, pow=${currentPowState}. isHardwareStopActive=${isHardwareStopActive}`);
         await performSafetyStop(currentEmerState ? "Emergency Pressed" : "Power OFF");
       } else {
         if (isHardwareStopActive) {
@@ -836,7 +1111,16 @@ async function processModbusLoop() {
         const dRes = await client.readHoldingRegisters(REG_DISTANCE, 1);
         plcState.distance = dRes.data[0];
         cycleSuccess = true;
-      } catch (e) { }
+      } catch (e) { 
+        console.error('❌ REG_DISTANCE read error:', e.message);
+      }
+      try {
+        const dRes = await client.readHoldingRegisters(TEST_DIST, 1);
+        plcState.test_Dist = dRes.data[0];
+        cycleSuccess = true;
+      } catch (e) { 
+        console.error('❌ TEST_DIST read error:', e.message);
+      }
 
       try {
         const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
@@ -930,6 +1214,15 @@ async function processModbusLoop() {
         console.error('❌ Calibration register R36 read error:', e.message);
       }
 
+      // Read Settings Force Register R30 (grams)
+      try {
+        const settingsForceRes = await client.readHoldingRegisters(REG_SETTINGS_FORCE, 1);
+        plcState.settingsForce = settingsForceRes.data[0];
+        cycleSuccess = true;
+      } catch (e) {
+        console.error('❌ Settings Force register R30 read error:', e.message);
+      }
+
       // Heartbeat pulse check: if pulse has stopped, trigger disconnection
       const HEARTBEAT_TIMEOUT = 4000; // 4 seconds timeout
       if (isConnected && (Date.now() - lastPulseTime > HEARTBEAT_TIMEOUT)) {
@@ -991,7 +1284,7 @@ async function readPLCData() {
     // Machine Status — R11
     machineStatus: plcState.machineStatus,
     machineStatusDisplay: (() => {
-      switch(plcState.machineStatus) {
+      switch (plcState.machineStatus) {
         case 1: return 'IDLE';
         case 2: return 'HOMING';
         case 3: return 'READY';
@@ -1006,6 +1299,10 @@ async function readPLCData() {
     // Probe Distance — R70
     distance: plcState.distance,
     distanceDisplay: `${plcState.distance} mm`,
+
+    // TEST Distance — R73
+    test_Dist: plcState.test_Dist,
+    test_DistDisplay: `${plcState.test_Dist} mm`,
 
     // Force — R54 (32-bit float)
     force_mN: plcState.force_mN,
@@ -1024,6 +1321,7 @@ async function readPLCData() {
     weightRange: plcState.weightRange,
     inputsMode: plcState.inputsMode,
     realtimePlcValue: plcState.realtimePlcValue,
+    settingsForce: plcState.settingsForce,
 
     // Coil states
     coilLLS: plcState.coilLLS,
@@ -1387,6 +1685,8 @@ ipcMain.handle("manual", async () => {
   return await safeExecute("MANUAL-MODE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await client.writeCoil(COIL_MANUAL, true);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     // await client.writeCoil(COIL_RET, false);
     // await client.writeCoil(COIL_INSERTION, false);
     // await client.writeCoil(COIL_CLAMP, false);
@@ -1398,9 +1698,11 @@ ipcMain.handle("manual-mode-activate", async () => {
   console.log("⚡ IPC: manual-mode-activate command received");
   return await safeExecute("MANUAL-MODE-ACTIVATE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
-    console.log(`🔌 Writing COIL_MANUAL(2001) = true, COIL_MANUAL_EXIT(2002) = false`);
+    console.log(`🔌 Writing COIL_MANUAL(2001) = true, COIL_MANUAL_EXIT(2002) = false, COIL_2POINT = false, COIL_3POINT = false`);
     const res1 = await client.writeCoil(COIL_MANUAL, true);
     const res2 = await client.writeCoil(COIL_MANUAL_EXIT, false);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     console.log(`✅ Modbus write responses:`, res1, res2);
     return { success: true };
   });
@@ -1411,9 +1713,12 @@ ipcMain.handle("manual-mode-deactivate", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await client.writeCoil(COIL_MANUAL, false);
     await client.writeCoil(COIL_MANUAL_EXIT, true);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     return { success: true };
   });
 });
+
 
 ipcMain.handle("two-point-activate", async () => {
   console.log("⚡ IPC: two-point-activate command received");
@@ -1446,6 +1751,8 @@ ipcMain.handle("deactivate-manual", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await client.writeCoil(COIL_MANUAL, false);
     await client.writeCoil(COIL_MANUAL_EXIT, true);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     return { success: true };
   });
 });
@@ -1455,7 +1762,41 @@ ipcMain.handle("disable-manual-mode", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await client.writeCoil(COIL_MANUAL, false);
     await client.writeCoil(COIL_MANUAL_EXIT, true);
+    await client.writeCoil(COIL_2POINT, false);
+    await client.writeCoil(COIL_3POINT, false);
     return { manualModeDisabled: true };
+  });
+});
+// // Add these handlers after the other IPC handlers
+// ipcMain.handle("home", async () => {
+//   return await safeExecute("HOME", async () => {
+//     if (!isConnected) throw new Error("Modbus not connected");
+//     // Pulse the home coil (turn ON then OFF after 2 seconds)
+//     await client.writeCoil(COIL_HOME, true);
+//     setTimeout(async () => {
+//       try {
+//         await client.writeCoil(COIL_HOME, false);
+//       } catch (e) {
+//         console.error("Error turning off HOME coil:", e.message);
+//       }
+//     }, 2000);
+//     return { success: true };
+//   });
+// });
+
+ipcMain.handle("tare", async () => {
+  return await safeExecute("TARE", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    // Pulse the tare coil (turn ON then OFF after 2 seconds)
+    await client.writeCoil(COIL_TARE, true);
+    setTimeout(async () => {
+      try {
+        await client.writeCoil(COIL_TARE, false);
+      } catch (e) {
+        console.error("Error turning off TARE coil:", e.message);
+      }
+    }, 2000);
+    return { success: true };
   });
 });
 
@@ -1481,31 +1822,6 @@ ipcMain.handle("catheter-forward", async () => {
 
 ipcMain.handle("catheter-backward", async () => {
   return { success: true };
-});
-
-ipcMain.handle("write-calibration-settings", async (event, { weightRange, inputsMode }) => {
-  return await safeExecute("WRITE_CALIBRATION_SETTINGS", async () => {
-    try {
-      console.log(`Writing Calibration Settings: weightRange=${weightRange}, inputsMode=${inputsMode}`);
-
-      if (!isConnected || !client.isOpen) {
-        throw new Error('Modbus not connected');
-      }
-
-      await client.writeRegister(32, Number(weightRange));
-      await delay(150);
-      await client.writeRegister(33, Number(inputsMode));
-      await delay(150);
-
-      plcState.weightRange = Number(weightRange);
-      plcState.inputsMode = Number(inputsMode);
-
-      return { success: true };
-    } catch (error) {
-      console.error('❌ Error sending calibration settings:', error.message);
-      return { success: false, error: error.message };
-    }
-  });
 });
 
 // Read data handler
@@ -1582,74 +1898,258 @@ ipcMain.handle("delete-config-file", async (event, configName) => {
   }
 });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-ipcMain.handle("send-process-mode", async (event, config) => {
-  return await safeExecute("SEND_PROCESS_CONFIG", async () => {
+// ipcMain.handle("send-process-mode", async (event, config) => {
+//   return await safeExecute("SEND_PROCESS_CONFIG", async () => {
+//     try {
+//       console.log('🔧 Process mode config received:', config);
+
+//       if (!isConnected || !client.isOpen) {
+//         throw new Error('Modbus not connected');
+//       }
+
+//       // Parse configuration values
+//       const pathLength = parseInt(config.pathlength);
+//       const thresholdForce = parseFloat(config.thresholdForce); // mN
+//       const insertionLength = parseFloat(config.insertionLength); // mm
+//       const retractionLength = parseFloat(config.retractionLength); // mm
+
+//       console.log('📊 Parsed config values:', {
+//         pathLength: `${pathLength} mm`,
+//         thresholdForce: `${thresholdForce} mN`,
+//         insertionLength: `${insertionLength} mm`,
+//         retractionLength: `${retractionLength} mm`
+//       });
+
+//       // Validate values
+//       if (isNaN(pathLength) || isNaN(thresholdForce) || isNaN(retractionLength)) {
+//         console.error('❌ Invalid configuration values');
+//         return false;
+//       }
+
+//       const results = [];
+
+//       // 1. Write Path Length
+//       console.log(`📝 Writing Path Length: ${pathLength} mm to address 6000`);
+//       await client.writeRegister(6000, pathLength);
+//       await delay(150);
+//       console.log('✅ Path Length written to address 6000');
+//       results.push({ register: '6000 (D0)', value: pathLength, success: true });
+
+//       // 2. Write Threshold Force
+//       const thresholdForceValue = Math.round(thresholdForce);
+//       console.log(`📝 Writing Threshold Force: ${thresholdForceValue} mN to R150`);
+//       await client.writeRegister(150, thresholdForceValue);
+//       await delay(150);
+//       console.log('✅ Threshold Force written to R150');
+//       results.push({ register: '150 (R150)', value: thresholdForceValue, success: true });
+
+//       // 3. Write Temperature
+//       const insertionValue = Math.round(insertionLength); // 0.1°C
+//       console.log(`📝 Writing Insertion Length: ${insertionValue} to 6050`);
+//       await client.writeRegister(6050, insertionValue);
+//       await delay(150);
+//       console.log('✅ Insertion length written to 6050');
+//       results.push({ register: '6050 (D50)', value: insertionValue, success: true });
+
+//       // 4. Write Retraction Length
+//       const retractionValue = Math.round(retractionLength);
+//       console.log(`📝 Writing Retraction Stroke Length: ${retractionValue} mm to R122`);
+//       await client.writeRegister(122, retractionValue);
+//       await delay(150);
+//       console.log('✅ Retraction Stroke Length written to R122');
+//       results.push({ register: '122 (R122)', value: retractionValue, success: true });
+
+//       console.log('✅ All configuration values written');
+//       console.log('📋 Write results:', results);
+
+//       return true;
+
+//     } catch (error) {
+//       console.error('❌ Error sending process mode:', error.message);
+//       return false;
+//     }
+//   });
+// });
+
+// Write Weight Range to R32
+ipcMain.handle("write-weight-range", async (event, value) => {
+  return await safeExecute("WRITE_WEIGHT_RANGE", async () => {
     try {
-      console.log('🔧 Process mode config received:', config);
+      const numVal = Number(value);
+      console.log(`📝 Writing Weight Range: ${numVal} to R32`);
+
+      if (!isConnected || !client.isOpen) {
+        throw new Error('Modbus not connected');
+      }
+
+      await client.writeRegister(32, numVal);
+      await delay(150);
+
+      plcState.weightRange = numVal;
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Error writing weight range (R32):', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+});
+
+// Write Inputs Mode to R33
+ipcMain.handle("write-inputs-mode", async (event, value) => {
+  return await safeExecute("WRITE_INPUTS_MODE", async () => {
+    try {
+      const numVal = Number(value);
+      console.log(`📝 Writing Inputs Mode: ${numVal} to R33`);
+
+      if (!isConnected || !client.isOpen) {
+        throw new Error('Modbus not connected');
+      }
+
+      await client.writeRegister(33, numVal);
+      await delay(150);
+
+      plcState.inputsMode = numVal;
+
+      return { success: true };
+    } catch (error) {
+      console.error('❌ Error writing inputs mode (R33):', error.message);
+      return { success: false, error: error.message };
+    }
+  });
+});
+
+ipcMain.handle("send-2point-config", async (event, config) => {
+  return await safeExecute("SEND_2POINT_CONFIG", async () => {
+    try {
+      console.log('🔧 2-Point config received:', config);
 
       if (!isConnected || !client.isOpen) {
         throw new Error('Modbus not connected');
       }
 
       // Parse configuration values
-      const pathLength = parseInt(config.pathlength);
-      const thresholdForce = parseFloat(config.thresholdForce); // mN
-      const insertionLength = parseFloat(config.insertionLength); // mm
-      const retractionLength = parseFloat(config.retractionLength); // mm
-
-      console.log('📊 Parsed config values:', {
-        pathLength: `${pathLength} mm`,
-        thresholdForce: `${thresholdForce} mN`,
-        insertionLength: `${insertionLength} mm`,
-        retractionLength: `${retractionLength} mm`
-      });
+      const probeTravelLimit = parseFloat(config.probeTravelLimit);
+      const forceLimit = parseFloat(config.forceLimit);
+      const testSpeed = parseFloat(config.testSpeed);
 
       // Validate values
-      if (isNaN(pathLength) || isNaN(thresholdForce) || isNaN(retractionLength)) {
-        console.error('❌ Invalid configuration values');
+      if (isNaN(probeTravelLimit) || isNaN(forceLimit) || isNaN(testSpeed)) {
+        console.error('❌ Invalid 2-point configuration values');
         return false;
       }
 
       const results = [];
 
-      // 1. Write Path Length
-      console.log(`📝 Writing Path Length: ${pathLength} mm to address 6000`);
-      await client.writeRegister(6000, pathLength);
+      // 1. Write Probe_travel_limit to R1
+      const probeTravelLimitValue = Math.round(probeTravelLimit);
+      console.log(`📝 Writing Probe Travel Limit: ${probeTravelLimitValue} to R1`);
+      await client.writeRegister(1, probeTravelLimitValue);
       await delay(150);
-      console.log('✅ Path Length written to address 6000');
-      results.push({ register: '6000 (D0)', value: pathLength, success: true });
+      results.push({ register: '1 (R1)', value: probeTravelLimitValue, success: true });
 
-      // 2. Write Threshold Force
-      const thresholdForceValue = Math.round(thresholdForce);
-      console.log(`📝 Writing Threshold Force: ${thresholdForceValue} mN to R150`);
-      await client.writeRegister(150, thresholdForceValue);
+      // 2. Write Force_limit to R2
+      const forceLimitValue = Math.round(forceLimit);
+      console.log(`📝 Writing Force Limit: ${forceLimitValue} to R2`);
+      await client.writeRegister(2, forceLimitValue);
       await delay(150);
-      console.log('✅ Threshold Force written to R150');
-      results.push({ register: '150 (R150)', value: thresholdForceValue, success: true });
+      results.push({ register: '2 (R2)', value: forceLimitValue, success: true });
 
-      // 3. Write Temperature
-      const insertionValue = Math.round(insertionLength); // 0.1°C
-      console.log(`📝 Writing Insertion Length: ${insertionValue} to 6050`);
-      await client.writeRegister(6050, insertionValue);
+      // 3. Write Test_speed to R3
+      const testSpeedValue = Math.round(testSpeed);
+      console.log(`📝 Writing Test Speed: ${testSpeedValue} to R3`);
+      await client.writeRegister(3, testSpeedValue);
       await delay(150);
-      console.log('✅ Insertion length written to 6050');
-      results.push({ register: '6050 (D50)', value: insertionValue, success: true });
+      results.push({ register: '3 (R3)', value: testSpeedValue, success: true });
 
-      // 4. Write Retraction Length
-      const retractionValue = Math.round(retractionLength);
-      console.log(`📝 Writing Retraction Stroke Length: ${retractionValue} mm to R122`);
-      await client.writeRegister(122, retractionValue);
-      await delay(150);
-      console.log('✅ Retraction Stroke Length written to R122');
-      results.push({ register: '122 (R122)', value: retractionValue, success: true });
-
-      console.log('✅ All configuration values written');
+      console.log('✅ 2-Point configuration values written');
       console.log('📋 Write results:', results);
 
       return true;
 
     } catch (error) {
-      console.error('❌ Error sending process mode:', error.message);
+      console.error('❌ Error sending 2-point config:', error.message);
+      return false;
+    }
+  });
+});
+
+ipcMain.handle("send-3point-config", async (event, config) => {
+  return await safeExecute("SEND_3POINT_CONFIG", async () => {
+    try {
+      console.log('🔧 3-Point config received:', config);
+
+      if (!isConnected || !client.isOpen) {
+        throw new Error('Modbus not connected');
+      }
+
+      // Parse configuration values
+      const testLength = parseFloat(config.testLength);
+      const measurementInterval = parseFloat(config.measurementInterval);
+      const probeTravelLimit = parseFloat(config.probeTravelLimit);
+      const forceLimit = parseFloat(config.forceLimit);
+      const testSpeed = parseFloat(config.testSpeed);
+      const supportSpan = parseFloat(config.supportSpan);
+      const horizontalSpeed = parseFloat(config.horizontalSpeed);
+
+      // Validate values
+      if (isNaN(testLength) || isNaN(measurementInterval) || isNaN(probeTravelLimit) ||
+        isNaN(forceLimit) || isNaN(testSpeed) || isNaN(supportSpan) || isNaN(horizontalSpeed)) {
+        console.error('❌ Invalid 3-point configuration values');
+        return false;
+      }
+
+      const results = [];
+
+      // 1. Write Test_length to R4
+      const testLengthValue = Math.round(testLength);
+      await client.writeRegister(4, testLengthValue);
+      await delay(150);
+      results.push({ register: '4 (R4)', value: testLengthValue, success: true });
+
+      // 2. Write Measurement_Interval to R5
+      const measurementIntervalValue = Math.round(measurementInterval);
+      await client.writeRegister(5, measurementIntervalValue);
+      await delay(150);
+      results.push({ register: '5 (R5)', value: measurementIntervalValue, success: true });
+
+      // 3. Write Probe_travel_limit to R6
+      const probeTravelLimitValue = Math.round(probeTravelLimit);
+      await client.writeRegister(6, probeTravelLimitValue);
+      await delay(150);
+      results.push({ register: '6 (R6)', value: probeTravelLimitValue, success: true });
+
+      // 4. Write Force_limit to R7
+      const forceLimitValue = Math.round(forceLimit);
+      await client.writeRegister(7, forceLimitValue);
+      await delay(150);
+      results.push({ register: '7 (R7)', value: forceLimitValue, success: true });
+
+      // 5. Write Test_speed to R8
+      const testSpeedValue = Math.round(testSpeed);
+      await client.writeRegister(8, testSpeedValue);
+      await delay(150);
+      results.push({ register: '8 (R8)', value: testSpeedValue, success: true });
+
+      // 6. Write Support_span to R9
+      const supportSpanValue = Math.round(supportSpan);
+      await client.writeRegister(9, supportSpanValue);
+      await delay(150);
+      results.push({ register: '9 (R9)', value: supportSpanValue, success: true });
+
+      // 7. Write Horizontal_speed to R10
+      const horizontalSpeedValue = Math.round(horizontalSpeed);
+      await client.writeRegister(10, horizontalSpeedValue);
+      await delay(150);
+      results.push({ register: '10 (R10)', value: horizontalSpeedValue, success: true });
+
+      console.log('✅ 3-Point configuration values written');
+      console.log('📋 Write results:', results);
+
+      return true;
+
+    } catch (error) {
+      console.error('❌ Error sending 3-point config:', error.message);
       return false;
     }
   });

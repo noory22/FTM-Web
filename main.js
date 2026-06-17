@@ -124,6 +124,8 @@ const COIL_LLS = 3922; // Modbus address for M1922 (2000 + 1922)
 // Manual Mode Coils
 const COIL_MANUAL = 2001;          // M1
 const COIL_MANUAL_EXIT = 2002;     // M2
+const COIL_HOME = 2032;             // M3
+const COIL_TARE = 2004;            // M4
 const COIL_CLAMP = 1003;           // X3
 const COIL_PROBE_UP = 1006;        // X6
 const COIL_PROBE_DOWN = 1005;      // X5
@@ -135,7 +137,8 @@ const COIL_START = 2010;           // M10
 const COIL_STOP = 2011;            // M11
 const COIL_RESET = 2012;           // M12
 
-const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe Distance
+const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe DistanceG
+const TEST_DIST = 73; // 1 register (16-bit integer) — TEST Distance that used using 2 & 3 point mode
 const REG_FORCE = 54;     // 2 registers (32-bit float)  — Force
 const REG_MANUAL_DISTANCE = 71;   // 1 register (16-bit integer) — Catheter Distance (R71)
 const REG_MACHINE_STATUS = 11;    // 1 register (16-bit integer) — Machine Status (R11): 1=IDLE, 2=HOMING, 3=READY
@@ -172,6 +175,7 @@ const client = new ModbusRTU();
 // PLC Cache & Command Queue
 let plcState = {
   distance: 0,        // R70  — Probe Distance (mm)
+  test_Dist: 0,        // R73  — TEST Distance (mm)
   force_mN: 0,        // R54  — Force (mN, 32-bit float)
   catheterDistance: 0,// R71  — Catheter Distance (mm)
   machineStatus: 1,   // R11  — Machine Status (1=IDLE, 2=HOMING, 3=READY, etc.)
@@ -1110,6 +1114,13 @@ async function processModbusLoop() {
       } catch (e) { 
         console.error('❌ REG_DISTANCE read error:', e.message);
       }
+      try {
+        const dRes = await client.readHoldingRegisters(TEST_DIST, 1);
+        plcState.test_Dist = dRes.data[0];
+        cycleSuccess = true;
+      } catch (e) { 
+        console.error('❌ TEST_DIST read error:', e.message);
+      }
 
       try {
         const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
@@ -1288,6 +1299,10 @@ async function readPLCData() {
     // Probe Distance — R70
     distance: plcState.distance,
     distanceDisplay: `${plcState.distance} mm`,
+
+    // TEST Distance — R73
+    test_Dist: plcState.test_Dist,
+    test_DistDisplay: `${plcState.test_Dist} mm`,
 
     // Force — R54 (32-bit float)
     force_mN: plcState.force_mN,
@@ -1704,6 +1719,7 @@ ipcMain.handle("manual-mode-deactivate", async () => {
   });
 });
 
+
 ipcMain.handle("two-point-activate", async () => {
   console.log("⚡ IPC: two-point-activate command received");
   return await safeExecute("TWO-POINT-ACTIVATE", async () => {
@@ -1749,6 +1765,38 @@ ipcMain.handle("disable-manual-mode", async () => {
     await client.writeCoil(COIL_2POINT, false);
     await client.writeCoil(COIL_3POINT, false);
     return { manualModeDisabled: true };
+  });
+});
+// // Add these handlers after the other IPC handlers
+// ipcMain.handle("home", async () => {
+//   return await safeExecute("HOME", async () => {
+//     if (!isConnected) throw new Error("Modbus not connected");
+//     // Pulse the home coil (turn ON then OFF after 2 seconds)
+//     await client.writeCoil(COIL_HOME, true);
+//     setTimeout(async () => {
+//       try {
+//         await client.writeCoil(COIL_HOME, false);
+//       } catch (e) {
+//         console.error("Error turning off HOME coil:", e.message);
+//       }
+//     }, 2000);
+//     return { success: true };
+//   });
+// });
+
+ipcMain.handle("tare", async () => {
+  return await safeExecute("TARE", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    // Pulse the tare coil (turn ON then OFF after 2 seconds)
+    await client.writeCoil(COIL_TARE, true);
+    setTimeout(async () => {
+      try {
+        await client.writeCoil(COIL_TARE, false);
+      } catch (e) {
+        console.error("Error turning off TARE coil:", e.message);
+      }
+    }, 2000);
+    return { success: true };
   });
 });
 
