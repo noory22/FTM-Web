@@ -91,6 +91,32 @@ const Settings = () => {
     return () => clearInterval(intervalId);
   }, [hasLoadedInitials]);
 
+  // Control COIL_SETTINGS coil status when mounting/unmounting Settings page
+  useEffect(() => {
+    const enterSettings = async () => {
+      try {
+        console.log("Entering Settings: Setting COIL_SETTINGS to 1");
+        await window.api.writeCoilSettings(true);
+      } catch (err) {
+        console.error("Error setting COIL_SETTINGS to 1 on mount:", err);
+      }
+    };
+
+    const leaveSettings = async () => {
+      try {
+        console.log("Leaving Settings: Setting COIL_SETTINGS to 0");
+        await window.api.writeCoilSettings(false);
+      } catch (err) {
+        console.error("Error setting COIL_SETTINGS to 0 on unmount:", err);
+      }
+    };
+
+    enterSettings();
+    return () => {
+      leaveSettings();
+    };
+  }, []);
+
   const handleWeightChange = (e) => {
     const val = e.target.value;
     // Restrict inputs to numbers between 0 and 1000

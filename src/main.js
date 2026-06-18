@@ -124,8 +124,9 @@ const COIL_LLS = 3922; // Modbus address for M1922 (2000 + 1922)
 // Manual Mode Coils
 const COIL_MANUAL = 2001;          // M1
 const COIL_MANUAL_EXIT = 2002;     // M2
-const COIL_HOME = 2300;             // M3
-const COIL_TARE = 2301;            // M4
+const COIL_HOME = 2300;             // M300
+const COIL_TARE = 2301;            // M301
+const COIL_SETTINGS = 2302;         // M02
 const COIL_CLAMP = 1003;           // X3
 const COIL_PROBE_UP = 1006;        // X6
 const COIL_PROBE_DOWN = 1005;      // X5
@@ -1817,6 +1818,15 @@ ipcMain.handle("tare", async () => {
         console.error("Error turning off TARE coil:", e.message);
       }
     }, 2000);
+    return { success: true };
+  });
+});
+
+ipcMain.handle("write-coil-settings", async (event, value) => {
+  return await safeExecute("WRITE-COIL-SETTINGS", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    console.log(`🔌 Writing COIL_SETTINGS(2302) = ${value ? 1 : 0}`);
+    await client.writeCoil(COIL_SETTINGS, value);
     return { success: true };
   });
 });

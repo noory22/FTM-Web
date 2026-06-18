@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld("api", {
   manualModeDeactivate: () => ipcRenderer.invoke("manual-mode-deactivate"),
   // home: () => ipcRenderer.invoke("home"),
   tare: () => ipcRenderer.invoke("tare"),
+  writeCoilSettings: (value) => ipcRenderer.invoke("write-coil-settings", value),
   twoPointActivate: () => ipcRenderer.invoke("two-point-activate"),
   threePointActivate: () => ipcRenderer.invoke("three-point-activate"),
   deactivateManual: () => ipcRenderer.invoke("deactivate-manual"),
