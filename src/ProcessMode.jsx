@@ -466,7 +466,7 @@ const ProcessMode = () => {
         type: "linear",
         title: {
           display: true,
-          text: "Probe Distance (mm)",
+          text: "Vertical Distance (mm)",
           color: "#6b7280",
           font: { size: 12, weight: "bold" },
         },
@@ -639,8 +639,10 @@ const ProcessMode = () => {
           {/* Live Telemetry tiles (small screens — above graph) */}
           {!isXl && (
             <div className={`shrink-0 grid gap-2 ${is3Point ? "grid-cols-4" : "grid-cols-3"}`}>
-              <TeleTile label="Catheter Dist." value={liveData.catheterDistance} unit="mm" colorClass="from-violet-500 to-indigo-500" bgClass="from-violet-50 to-indigo-50 border-violet-200/60" textClass="text-violet-700" />
-              <TeleTile label="Probe Dist."    value={liveData.probeDistance}    unit="mm" colorClass="from-green-500 to-emerald-500" bgClass="from-green-50 to-emerald-50 border-green-200/60"   textClass="text-green-700"  />
+              <TeleTile label="Horizontal Distance
+              
+              " value={liveData.catheterDistance} unit="mm" colorClass="from-violet-500 to-indigo-500" bgClass="from-violet-50 to-indigo-50 border-violet-200/60" textClass="text-violet-700" />
+              <TeleTile label="Vertical Distance"    value={liveData.probeDistance}    unit="mm" colorClass="from-green-500 to-emerald-500" bgClass="from-green-50 to-emerald-50 border-green-200/60"   textClass="text-green-700"  />
               <TeleTile label="Force"          value={liveData.force}            unit="mN" colorClass="from-cyan-500 to-blue-500"     bgClass="from-cyan-50 to-blue-50 border-cyan-200/60"       textClass="text-blue-700"   />
               {is3Point && (
                 <TeleTile label="Steps (R72)" value={liveData.stepsToMove} unit="" colorClass="from-orange-500 to-amber-500" bgClass="from-orange-50 to-amber-50 border-orange-200/60" textClass="text-orange-700" />
@@ -653,7 +655,7 @@ const ProcessMode = () => {
             <div className="flex items-center justify-between mb-2 shrink-0">
               <div>
                 <span className={`${isXl ? "text-base" : "text-sm"} font-bold text-gray-900`}>
-                  Force vs Probe Distance
+                  Force vs Vertical Distance
                 </span>
                 <span className="text-xs text-gray-400 ml-2">Real-time</span>
               </div>
@@ -682,8 +684,8 @@ const ProcessMode = () => {
               <h3 className="text-base font-bold text-gray-900 mb-1">Real-time Sensors</h3>
               <p className="text-xs text-gray-400 mb-3">Live monitoring data</p>
               <div className={`grid gap-3 ${is3Point ? "grid-cols-2" : "grid-cols-1"}`}>
-                <SensorCard label="Catheter Distance" value={liveData.catheterDistance} unit="mm" gradient="from-violet-500 to-indigo-500" bg="from-violet-50 to-indigo-50" border="border-violet-200/60" textColor="text-violet-700" icon={<Ruler className="w-4 h-4 text-white" />} />
-                <SensorCard label="Probe Distance"    value={liveData.probeDistance}    unit="mm" gradient="from-green-500 to-emerald-500" bg="from-green-50 to-emerald-50"   border="border-green-200/60"  textColor="text-green-700"  icon={<Ruler className="w-4 h-4 text-white" />} />
+                <SensorCard label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" gradient="from-violet-500 to-indigo-500" bg="from-violet-50 to-indigo-50" border="border-violet-200/60" textColor="text-violet-700" icon={<Ruler className="w-4 h-4 text-white" />} />
+                <SensorCard label="Vertical Distance"    value={liveData.probeDistance}    unit="mm" gradient="from-green-500 to-emerald-500" bg="from-green-50 to-emerald-50"   border="border-green-200/60"  textColor="text-green-700"  icon={<Ruler className="w-4 h-4 text-white" />} />
                 <SensorCard label="Force"             value={liveData.force}            unit="mN" gradient="from-cyan-500 to-blue-500"    bg="from-cyan-50 to-blue-50"       border="border-cyan-200/60"   textColor="text-blue-700"   icon={<Gauge className="w-4 h-4 text-white" />} />
                 {is3Point && (
                   <SensorCard label="Steps to Move (R72)" value={liveData.stepsToMove} unit="" gradient="from-orange-500 to-amber-500" bg="from-orange-50 to-amber-50" border="border-orange-200/60" textColor="text-orange-700" icon={<Activity className="w-4 h-4 text-white" />} />

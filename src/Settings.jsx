@@ -11,6 +11,14 @@ import {
   Settings as SettingsIcon 
 } from 'lucide-react';
 
+// Input mode mapping for display names only
+// The values '0', '1', '2' are still sent to the PLC
+const INPUT_MODE_MAP = {
+  '0': { label: 'Normal', description: 'Default mode' },
+  '1': { label: 'Tare', description: 'Zero the load cell' },
+  '2': { label: 'Calibrate', description: 'Calibrate load cell' }
+};
+
 const Settings = () => {
   const navigate = useNavigate();
 
@@ -124,16 +132,19 @@ const Settings = () => {
     }
   };
 
-  // Instant write input mode to R33
+  // Instant write input mode to R33 - functionality unchanged
   const handleInputSelect = async (option) => {
     setInputsMode(option);
     setSuccessMessage('');
     setErrorMessage('');
 
     try {
+      // Still sending the numeric value (0, 1, or 2) to the PLC
       const result = await window.api.writeInputsMode(Number(option));
       if (result && result.success) {
-        setSuccessMessage(`Input ${option} written to R33 successfully.`);
+        // Get the friendly name for the success message
+        const friendlyName = INPUT_MODE_MAP[option]?.label || option;
+        setSuccessMessage(`Input "${friendlyName}" (Mode ${option}) written to R33 successfully.`);
       } else {
         setErrorMessage(result?.error || 'Failed to write input mode.');
       }
@@ -145,6 +156,11 @@ const Settings = () => {
 
   const handleCancel = () => {
     navigate('/');
+  };
+
+  // Helper function to get the display label for the current input mode
+  const getInputLabel = (value) => {
+    return INPUT_MODE_MAP[value]?.label || value;
   };
 
   return (
@@ -163,15 +179,6 @@ const Settings = () => {
               <p className="mt-2 max-w-3xl text-slate-600">
                 Configure load cell calibration inputs and monitor real-time force register telemetry.
               </p>
-            </div>
-            
-            <div className={`w-fit rounded-lg border px-4 py-2 flex items-center gap-2 text-sm font-semibold shadow-sm ${
-              connectionStatus === 'connected' 
-                ? 'border-green-200 bg-green-50 text-green-700' 
-                : 'border-red-200 bg-red-50 text-red-700'
-            }`}>
-              <span className={`h-2.5 w-2.5 rounded-full ${connectionStatus === 'connected' ? 'bg-green-600 animate-pulse' : 'bg-red-600'}`} />
-              {connectionStatus === 'connected' ? 'Modbus Connected' : 'Modbus Disconnected'}
             </div>
           </div>
         </section>
@@ -238,28 +245,41 @@ const Settings = () => {
                 </div>
 
                 {/* Input Selector (R33) — instant write on click */}
+                {/* Only the button LABELS are changed. Values '0', '1', '2' remain unchanged. */}
                 <div className="space-y-2">
                   <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
                     <Binary className="w-4 h-4 text-slate-400" />
-                    Input Selection (0, 1, 2)
+                    Input Mode Selection
                   </label>
                   
-                  <div className="flex gap-2">
-                    {['0', '1', '2'].map((option) => (
+                  <div className="grid grid-cols-3 gap-2">
+                    {Object.entries(INPUT_MODE_MAP).map(([value, config]) => (
                       <button
-                        key={option}
+                        key={value}
                         type="button"
-                        onClick={() => handleInputSelect(option)}
+                        onClick={() => handleInputSelect(value)}
                         disabled={connectionStatus !== 'connected'}
-                        className={`flex-1 py-3 px-4 rounded-xl border-2 font-bold text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
-                          inputsMode === option
-                            ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm'
+                        className={`flex flex-col items-center justify-center py-3 px-2 rounded-xl border-2 font-bold text-sm transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          inputsMode === value
+                            ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-sm ring-2 ring-blue-200'
                             : 'border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50'
                         }`}
                       >
-                        Input {option}
+                        <span className="text-sm">{config.label}</span>
+                        {/* <span className="text-[10px] font-normal text-slate-400 mt-0.5">
+                          Mode {value}
+                        </span> */}
                       </button>
                     ))}
+                  </div>
+
+                  {/* Show current selection with friendly name */}
+                  <div className="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                    <span>Current:</span>
+                    <span className="font-mono font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                      {getInputLabel(inputsMode)}
+                    </span>
+                    {/* <span className="text-slate-400">(Mode {inputsMode})</span> */}
                   </div>
                 </div>
               </div>

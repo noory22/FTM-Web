@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Database, FileCheck, Gauge, Layers, Loader2 } from 'lucide-react';
+import { BarChart3, Database, FileCheck, Gauge, Layers, Loader2, Play } from 'lucide-react';
 
 const emptyAnalytics = {
   standard: [],
@@ -11,20 +11,10 @@ const emptyAnalytics = {
 
 const MainMenu = () => {
   const navigate = useNavigate();
-  // const [userRole, setUserRole] = useState(null);
   const [analytics, setAnalytics] = useState(emptyAnalytics);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-
-  // useEffect(() => {
-  //   const user = localStorage.getItem('user');
-  //   if (!user) {
-  //     navigate('/');
-  //     return;
-  //   }
-
-  //   setUserRole(JSON.parse(user).role);
-  // }, [navigate]);
+  const [activeTab, setActiveTab] = useState('2-point'); // '2-point' or '3-point'
 
   useEffect(() => {
     let mounted = true;
@@ -100,14 +90,96 @@ const MainMenu = () => {
     ];
   }, [analytics]);
 
-  const renderConfigRows = (configs, fields) => {
+  // Handle 2-point test start
+  const handle2PointStart = async (config) => {
+    if (!config) {
+      alert('Please select a configuration first.');
+      return;
+    }
+
+    try {
+      // Call the 2-point config API with all required parameters
+      const success = await window.api.send2PointConfig({
+        probeTravelLimit: config.probeTravelLimit,  // Maps to R1
+        forceLimit: config.forceLimit,              // Maps to R2
+        testSpeed: config.testSpeed                 // Maps to R3
+      });
+
+      if (!success) {
+        alert("PLC configuration failed. Please try again.");
+        return;
+      }
+
+      localStorage.setItem('selectedConfig', JSON.stringify({ ...config, testType: '2-point' }));
+      navigate('/process-mode');
+
+    } catch (error) {
+      console.error("PLC transfer failed:", error);
+      alert("Failed to send configuration to PLC.");
+    }
+  };
+
+  // Handle 3-point test start
+  const handle3PointStart = async (config) => {
+    if (!config) {
+      alert('Please select a configuration first.');
+      return;
+    }
+
+    try {
+      // Call the 3-point config API with all required parameters
+      const success = await window.api.send3PointConfig({
+        testLength: config.testLength,              // Maps to R4
+        measurementInterval: config.measurementInterval, // Maps to R5
+        probeTravelLimit: config.probeTravelLimit,  // Maps to R6
+        forceLimit: config.forceLimit,              // Maps to R7
+        testSpeed: config.testSpeed,                // Maps to R8
+        supportSpan: config.supportSpan,            // Maps to R9
+        horizontalSpeed: config.horizontalSpeed     // Maps to R10
+      });
+
+      if (!success) {
+        alert("PLC configuration failed. Please try again.");
+        return;
+      }
+
+      localStorage.setItem('selectedConfig', JSON.stringify({ ...config, testType: '3-point' }));
+      navigate('/process-mode');
+
+    } catch (error) {
+      console.error("PLC transfer failed:", error);
+      alert("Failed to send configuration to PLC.");
+    }
+  };
+
+  const renderConfigTable = (configs, type) => {
     if (!configs.length) {
       return (
         <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
-          No configurations saved yet.
+          No {type} configurations saved yet.
         </div>
       );
     }
+
+    // Define columns based on type
+    const getColumns = () => {
+      if (type === '2-point') {
+        return [
+          { key: 'probeTravelLimit', label: 'Probe Limit' },
+          { key: 'forceLimit', label: 'Force Limit' },
+          { key: 'testSpeed', label: 'Test Speed' },
+        ];
+      } else {
+        return [
+          { key: 'testLength', label: 'Test Length' },
+          { key: 'measurementInterval', label: 'Interval' },
+          { key: 'forceLimit', label: 'Force Limit' },
+          { key: 'supportSpan', label: 'Support Span' },
+        ];
+      }
+    };
+
+    const columns = getColumns();
 
     return (
       <div className="overflow-hidden rounded-lg border border-slate-200">
@@ -116,20 +188,36 @@ const MainMenu = () => {
             <thead className="sticky top-0 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-semibold">Name</th>
-                {fields.map((field) => (
+                {columns.map((field) => (
                   <th key={field.key} className="px-4 py-3 font-semibold">{field.label}</th>
                 ))}
+                <th className="px-4 py-3 font-semibold text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {configs.map((config, index) => (
                 <tr key={`${config.configName || 'config'}-${index}`}>
                   <td className="px-4 py-3 font-semibold text-slate-900">{config.configName || 'Untitled'}</td>
-                  {fields.map((field) => (
+                  {columns.map((field) => (
                     <td key={field.key} className="px-4 py-3 text-slate-600">
                       {config[field.key] || '-'}
                     </td>
                   ))}
+                  <td className="px-4 py-3 text-center">
+                    <button
+                      onClick={() => {
+                        if (type === '2-point') {
+                          handle2PointStart(config);
+                        } else {
+                          handle3PointStart(config);
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    >
+                      <Play className="h-3.5 w-3.5" />
+                      Start Test
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -139,7 +227,7 @@ const MainMenu = () => {
     );
   };
 
-  if (isLoading) { // [LOGIN BYPASSED] removed !userRole — no login required
+  if (isLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-5 py-4 shadow-sm">
@@ -160,17 +248,11 @@ const MainMenu = () => {
                 <BarChart3 className="h-4 w-4" />
                 Analytics
               </p>
-              <h1 className="mt-2 text-3xl font-bold text-slate-900">Configuration Dashboard</h1>
-              <p className="mt-2 max-w-3xl text-slate-600">
-                Overview of loaded configurations, created configurations, and saved configuration details.
+              <h1 className="mt-2 text-3xl font-bold text-slate-900">Dashboard</h1>
+              <p className="mt-2 w-full text-slate-600">
+                Overview of test performed and configurations loaded. Select a configuration to start a new test or review existing analytics.
               </p>
             </div>
-            {/* [LOGIN BYPASSED] Role badge removed — no role-based login
-            <div className="w-fit rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Role</p>
-              <p className="text-base font-bold capitalize text-slate-900">{userRole}</p>
-            </div>
-            */}
           </div>
 
           {loadError && (
@@ -201,59 +283,54 @@ const MainMenu = () => {
           })}
         </section>
 
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:col-span-1">
-            <h2 className="text-lg font-bold text-slate-900">Currently Loaded</h2>
-            {analytics.loadedConfig ? (
-              <div className="mt-4 space-y-3 text-sm">
-                {Object.entries(analytics.loadedConfig).map(([key, value]) => {
-                  if (value && typeof value === 'object') return null;
-                  return (
-                    <div key={key} className="flex justify-between gap-4 border-b border-slate-100 pb-2 last:border-b-0">
-                      <span className="font-semibold capitalize text-slate-500">{key.replace(/([A-Z])/g, ' $1')}</span>
-                      <span className="text-right font-medium text-slate-900">{value || '-'}</span>
-                    </div>
-                  );
-                })}
+        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-center gap-4 border-b border-slate-200 pb-3">
+            <h2 className="text-lg font-bold text-slate-900">Configuration Details</h2>
+            <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
+              <button
+                onClick={() => setActiveTab('2-point')}
+                className={`rounded-md px-4 py-1.5 text-sm font-semibold transition-colors ${
+                  activeTab === '2-point'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                2-Point
+              </button>
+              <button
+                onClick={() => setActiveTab('3-point')}
+                className={`rounded-md px-4 py-1.5 text-sm font-semibold transition-colors ${
+                  activeTab === '3-point'
+                    ? 'bg-white text-slate-900 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                3-Point
+              </button>
+            </div>
+          </div>
+
+          {activeTab === '2-point' && (
+            <>
+              <div className="mb-3">
+                <p className="text-sm text-slate-600">
+                  Showing {analytics.twoPoint.length} two-point configuration(s)
+                </p>
               </div>
-            ) : (
-              <div className="mt-4 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
-                No configuration is currently loaded.
+              {renderConfigTable(analytics.twoPoint, '2-point')}
+            </>
+          )}
+
+          {activeTab === '3-point' && (
+            <>
+              <div className="mb-3">
+                <p className="text-sm text-slate-600">
+                  Showing {analytics.threePoint.length} three-point configuration(s)
+                </p>
               </div>
-            )}
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm xl:col-span-2">
-            <h2 className="mb-4 text-lg font-bold text-slate-900">Standard Configuration Details</h2>
-            {renderConfigRows(analytics.standard, [
-              { key: 'pathlength', label: 'Path Length' },
-              { key: 'thresholdForce', label: 'Threshold Force' },
-              { key: 'insertionLength', label: 'Insertion' },
-              { key: 'retractionLength', label: 'Retraction' },
-              { key: 'numberOfCurves', label: 'Curves' },
-            ])}
-          </div>
-        </section>
-
-        <section className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-slate-900">2-Point Configuration Details</h2>
-            {renderConfigRows(analytics.twoPoint, [
-              { key: 'probeTravelLimit', label: 'Probe Limit' },
-              { key: 'forceLimit', label: 'Force Limit' },
-              { key: 'testSpeed', label: 'Test Speed' },
-            ])}
-          </div>
-
-          <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="mb-4 text-lg font-bold text-slate-900">3-Point Configuration Details</h2>
-            {renderConfigRows(analytics.threePoint, [
-              { key: 'testLength', label: 'Test Length' },
-              { key: 'measurementInterval', label: 'Interval' },
-              { key: 'forceLimit', label: 'Force Limit' },
-              { key: 'supportSpan', label: 'Support Span' },
-            ])}
-          </div>
+              {renderConfigTable(analytics.threePoint, '3-point')}
+            </>
+          )}
         </section>
       </div>
     </div>

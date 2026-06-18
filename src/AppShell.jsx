@@ -180,28 +180,17 @@ const AppShell = () => {
         console.error('Failed to deactivate manual mode:', error);
       }
       navigate('/');
-    } else if (path.includes('process-mode')) {
+      } else if (path.includes('process-mode')) {
       const safeStatuses = ['IDLE', 'READY', 'UNKNOWN', 'COMPLETED'];
       if (!safeStatuses.includes(plcData.machineStatus)) {
         alert("Please STOP and RESET the process before navigating away.");
         return;
       }
-      try {
-        const storedConfig = localStorage.getItem('selectedConfig');
-        if (storedConfig) {
-          const config = JSON.parse(storedConfig);
-          if (config.testType === '3-point') {
-            navigate('/load-config/3-point');
-            return;
-          }
-        }
-      } catch (e) {
-        console.error('Error reading testType from localStorage:', e);
-      }
-      navigate('/load-config/2-point');
+      // Navigate to dashboard instead of load config
+      navigate('/');
     } else {
       navigate('/');
-    }
+    } 
   };
 
   const handleReconnect = async () => {

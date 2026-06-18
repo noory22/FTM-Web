@@ -14,15 +14,15 @@ export const navigationGroups = [
   {
     // title: 'Run',
     items: [
-      { label: 'Dashboard', path: '/main-menu', icon: Home, roles: ['admin', 'operator'] },
-      { label: 'Manual Mode', path: '/manual-mode', icon: Gauge, roles: ['admin', 'operator'], action: 'manual', blockedByEmergency: true },
-      { label: 'Process Logs', path: '/process-logs', icon: FileText, roles: ['admin', 'operator'] },
+      { label: 'Dashboard', path: '/main-menu', icon: Home },
+      { label: 'Manual Mode', path: '/manual-mode', icon: Gauge, action: 'manual', blockedByEmergency: true },
+      { label: 'Process Logs', path: '/process-logs', icon: FileText },
     ],
   },
   {
     // title: 'Settings',
     items: [
-      { label: 'Settings', path: '/settings', icon: Settings, roles: ['admin', 'operator'] }
+      { label: 'Settings', path: '/settings', icon: Settings }
     ]
   },
   {
@@ -31,28 +31,25 @@ export const navigationGroups = [
       {
         label: 'Test Selection',
         icon: ClipboardList,
-        roles: ['admin', 'operator'],
         children: [
           {
             label: '2-Point Test',
             path: '/test-action/2-point',
             icon: ClipboardList,
-            roles: ['admin', 'operator'],
             children: [
-              { label: 'Create Configuration', path: '/create-config/2-point', icon: FilePlus, roles: ['admin'] },
-              { label: 'Continue to Process Mode', path: '/load-config/2-point', icon: FileInput, roles: ['admin', 'operator'] },
-              { label: 'Delete Configuration', path: '/delete-config/2-point', icon: Trash2, roles: ['admin'], danger: true },
+              { label: 'Create Configuration', path: '/create-config/2-point', icon: FilePlus },
+              { label: 'Start Test', path: '/load-config/2-point', icon: FileInput },
+              { label: 'Delete Configuration', path: '/delete-config/2-point', icon: Trash2, danger: true },
             ],
           },
           {
             label: '3-Point Test',
             path: '/test-action/3-point',
             icon: ClipboardList,
-            roles: ['admin', 'operator'],
             children: [
-              { label: 'Create Configuration', path: '/create-config/3-point', icon: FilePlus, roles: ['admin'] },
-              { label: 'Continue to Process Mode', path: '/load-config/3-point', icon: FileInput, roles: ['admin', 'operator'] },
-              { label: 'Delete Configuration', path: '/delete-config/3-point', icon: Trash2, roles: ['admin'], danger: true },
+              { label: 'Create Configuration', path: '/create-config/3-point', icon: FilePlus },
+              { label: 'Start Test', path: '/load-config/3-point', icon: FileInput },
+              { label: 'Delete Configuration', path: '/delete-config/3-point', icon: Trash2, danger: true },
             ],
           },
         ],

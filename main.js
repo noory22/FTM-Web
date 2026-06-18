@@ -171,6 +171,7 @@ function registersToFloat32BE(highWord, lowWord) {
 let isConnected = false;
 let lastPulseTime = Date.now();
 const client = new ModbusRTU();
+let lastHomeState = false;
 
 // PLC Cache & Command Queue
 let plcState = {
@@ -181,6 +182,7 @@ let plcState = {
   machineStatus: 1,   // R11  — Machine Status (1=IDLE, 2=HOMING, 3=READY, etc.)
   stepsToMove: 0,     // R72  — Steps to move
   coilLLS: false,
+  home: false,        // M300 - Homing active
   clamp: false,
   probeUp: false,
   probeDown: false,
@@ -1018,6 +1020,24 @@ async function processModbusLoop() {
         console.error('❌ COIL_LLS read error:', e.message);
       }
 
+      // Read Homing Coil M300
+      try {
+          const homeResult = await client.readCoils(COIL_HOME, 1);
+          const currentHomeState = Boolean(homeResult.data[0]);
+          plcState.home = currentHomeState;
+          cycleSuccess = true;
+          
+          // Emit homing status change
+          if (currentHomeState !== lastHomeState) {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('home-status', currentHomeState);
+              }
+              lastHomeState = currentHomeState;
+          }
+      } catch (e) {
+          console.error('❌ COIL_HOME read error:', e.message);
+      }
+
       // ==============================================
       // READ M BITS (Internal Relays - Mode Selection)
       // ==============================================
@@ -1325,6 +1345,7 @@ async function readPLCData() {
 
     // Coil states
     coilLLS: plcState.coilLLS,
+    home: plcState.home,
     clamp: plcState.clamp,
     probeUp: plcState.probeUp,
     probeDown: plcState.probeDown,

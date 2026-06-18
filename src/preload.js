@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("api", {
   probeUp: () => ipcRenderer.invoke("probe-up"),
   probeDown: () => ipcRenderer.invoke("probe-down"),
   probeStop: () => ipcRenderer.invoke("probe-stop"),
+  // Add to the api object
+  checkHomeStatus: () => ipcRenderer.invoke("check-home-status"),
   // ============= CSV LOGGING =============
   startCSV: (config) => ipcRenderer.invoke("csv-start", config),
   appendCSV: (payload) => ipcRenderer.invoke("csv-append", payload),
@@ -73,6 +75,12 @@ contextBridge.exposeInMainWorld("api", {
   onUpdateProgress: (callback) => {
     ipcRenderer.on('update-progress', (event, progress) => callback(progress));
   }
+});
+// Listen for homing status updates
+ipcRenderer.on('home-status', (event, status) => {
+  window.dispatchEvent(new CustomEvent('home-status-change', {
+    detail: status
+  }));
 });
 
 // Listen for connection status updates from main process

@@ -1,6 +1,6 @@
 {
   "name": "ftm",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Flexural Testing Machine",
   "main": "main.js",
   "author": {
@@ -139,7 +139,7 @@
     "publish": {
       "provider": "github",
       "owner": "noory22",
-      "repo": "FTM-V2",
+      "repo": "FTM-Web",
       "private": false,
       "releaseType": "release"
     }

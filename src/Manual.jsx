@@ -58,6 +58,9 @@ const Manual = () => {
   const [showConnectionError, setShowConnectionError] = useState(false);
   const [manualModeActive, setManualModeActive] = useState(false);
 
+  // Track if homing was triggered by user (not auto)
+  const [homingTriggered, setHomingTriggered] = useState(false);
+
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
@@ -87,7 +90,7 @@ const Manual = () => {
         type: 'linear',
         title: {
           display: true,
-          text: 'Probe Distance (mm)',
+          text: 'Vertical Distance (mm)',
           color: '#6b7280',
           font: { size: 12, weight: 'bold' },
         },
@@ -184,25 +187,57 @@ const Manual = () => {
     setCatheterBack(false);
     setHomeActive(false);
     setTareActive(false);
+    setHomingTriggered(false);
   };
 
   const handleHome = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+    // Don't allow homing if already active
+    if (homeActive) return;
+    
     try {
+      // Set homing triggered flag
+      setHomingTriggered(true);
       setHomeActive(true);
+      
       const result = await window.api.home();
-      if (result.success) {
-        console.log("Home command executed");
-        setTimeout(() => setHomeActive(false), 3000);
-      } else {
+      if (!result.success) {
         setHomeActive(false);
+        setHomingTriggered(false);
         console.error("Home command failed:", result.message);
       }
     } catch (error) {
       console.error("Home error:", error);
       setHomeActive(false);
+      setHomingTriggered(false);
     }
   };
+
+  // Listen for homing status changes from PLC
+  useEffect(() => {
+    const handleHomeStatus = (e) => {
+      const homeState = Boolean(e.detail);
+      
+      // Only update if homing was triggered by user
+      if (homingTriggered) {
+        // If PLC turned off homing (completed), update UI
+        if (!homeState) {
+          console.log("Homing completed on PLC side");
+          setHomeActive(false);
+          setHomingTriggered(false);
+        }
+      } else {
+        // If homing was not triggered by us, sync with PLC state
+        setHomeActive(homeState);
+      }
+    };
+
+    window.addEventListener('home-status-change', handleHomeStatus);
+
+    return () => {
+      window.removeEventListener('home-status-change', handleHomeStatus);
+    };
+  }, [homingTriggered]);
 
   const handleTare = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
@@ -222,10 +257,24 @@ const Manual = () => {
     }
   };
 
+  // Helper function to reset homing trigger when user interacts with other controls
+  const resetHomingState = () => {
+    // If homing was triggered and the user interacts with other controls,
+    // we should allow homing to be triggered again
+    if (homingTriggered) {
+      console.log("User interacted with other controls, resetting homing state");
+      setHomingTriggered(false);
+    }
+  };
+
   const handleProbeDownStart = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
     if (movementTimeoutRef.current) clearTimeout(movementTimeoutRef.current);
     if (probeIntervalRef.current) clearInterval(probeIntervalRef.current);
+    
+    // Reset homing trigger on user interaction
+    resetHomingState();
+    
     try {
       const result = await window.api.probeDown();
       if (result.success) {
@@ -247,6 +296,10 @@ const Manual = () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
     if (movementTimeoutRef.current) clearTimeout(movementTimeoutRef.current);
     if (probeIntervalRef.current) clearInterval(probeIntervalRef.current);
+    
+    // Reset homing trigger on user interaction
+    resetHomingState();
+    
     try {
       const result = await window.api.probeUp();
       if (result.success) {
@@ -281,6 +334,10 @@ const Manual = () => {
 
   const handleClampToggle = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+    
+    // Reset homing trigger on user interaction
+    resetHomingState();
+    
     try {
       const newState = !clamp;
       const result = await window.api.clampControl(newState);
@@ -292,6 +349,10 @@ const Manual = () => {
 
   const handleCatheterForward = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+    
+    // Reset homing trigger on user interaction
+    resetHomingState();
+    
     try {
       const result = await window.api.catheterForward();
       if (result.success) {
@@ -305,6 +366,10 @@ const Manual = () => {
 
   const handleCatheterBackward = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+    
+    // Reset homing trigger on user interaction
+    resetHomingState();
+    
     try {
       const result = await window.api.catheterBackward();
       if (result.success) {
@@ -391,6 +456,11 @@ const Manual = () => {
             if (data.probeDown !== undefined) setProbeDown(Boolean(data.probeDown));
             if (data.catheterForward !== undefined) setCatheterForward(Boolean(data.catheterForward));
             if (data.catheterBack !== undefined) setCatheterBack(Boolean(data.catheterBack));
+            
+            // Update home state from PLC data (only if not triggered by user)
+            if (!homingTriggered && data.home !== undefined) {
+              setHomeActive(Boolean(data.home));
+            }
 
             setGraphData(prev => {
               const x = Number(data.distance);
@@ -417,7 +487,7 @@ const Manual = () => {
       intervalId = setInterval(readData, 500);
     }
     return () => { if (intervalId) clearInterval(intervalId); };
-  }, [connectionStatus.connected, emergencyActive]);
+  }, [connectionStatus.connected, emergencyActive, homingTriggered]);
 
   const handleReconnect = async () => {
     try {
@@ -450,7 +520,6 @@ const Manual = () => {
   // ── Prominent radio-style status row ────────────────────────────────────────
   const RadioRow = ({ active, dotColor, dotColorRing, label, activeLabel, inactiveLabel }) => (
     <div className={`flex items-center gap-3 transition-opacity duration-300 ${!controlsEnabled ? 'opacity-40' : 'opacity-100'}`}>
-      {/* Radio dot — larger and more impactful */}
       <span
         className={`w-5 h-5 rounded-full flex-shrink-0 border-2 transition-all duration-300
           ${active
@@ -458,10 +527,7 @@ const Manual = () => {
             : 'bg-white border-slate-700'}`}
         style={active ? { boxShadow: '0 0 0 3px rgba(0,0,0,0.08)' } : {}}
       />
-      {/* Label — larger, bolder */}
       <span className="text-[16px] font-semibold text-slate-700 w-24 flex-shrink-0">{label}</span>
-      {/* Status pill — more substantial */}
-      
     </div>
   );
 
@@ -477,7 +543,7 @@ const Manual = () => {
                 <Ruler className="w-5 h-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Probe Distance</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Vertical Distance</p>
                 <p className="text-2xl font-bold text-slate-800">{probeDistance} <span className="text-sm font-medium text-slate-500">mm</span></p>
               </div>
             </div>
@@ -489,7 +555,7 @@ const Manual = () => {
                 <MoveHorizontal className="w-5 h-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Catheter Distance</p>
+                <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Horizontal Distance</p>
                 <p className="text-2xl font-bold text-slate-800">{catheterDistance} <span className="text-sm font-medium text-slate-500">mm</span></p>
               </div>
             </div>
@@ -522,7 +588,7 @@ const Manual = () => {
                       <TrendingUp className="w-5 h-5 text-white" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-semibold text-slate-800">Probe Distance vs Force</h3>
+                      <h3 className="text-xl font-semibold text-slate-800">Vertical Distance vs Force</h3>
                       <p className="text-slate-500 text-xs font-medium">Real-time analysis</p>
                     </div>
                   </div>
@@ -631,12 +697,12 @@ const Manual = () => {
                 <div className="flex flex-col items-center gap-2">
                   <button
                     onClick={handleHome}
-                    disabled={!connectionStatus.connected || emergencyActive || !manualModeActive}
+                    disabled={!connectionStatus.connected || emergencyActive || !manualModeActive || homeActive}
                     className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
                       ${homeActive
                         ? 'bg-indigo-500 border-indigo-600 text-white shadow-lg shadow-indigo-200'
                         : 'bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-400 hover:shadow-md active:scale-95'}
-                      ${(!connectionStatus.connected || emergencyActive || !manualModeActive) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                      ${(!connectionStatus.connected || emergencyActive || !manualModeActive || homeActive) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
                     `}
                   >
                     {homeActive && (
@@ -644,7 +710,9 @@ const Manual = () => {
                     )}
                     <Home className={`w-7 h-7 transition-transform duration-200 ${!homeActive && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
                   </button>
-                  <span className="text-[14px] font-bold uppercase tracking-wider text-slate-700">Homing</span>
+                  <span className="text-[14px] font-bold uppercase tracking-wider text-slate-700">
+                    {homeActive ? 'Homing...' : 'Homing'}
+                  </span>
                 </div>
 
                 {/* Tare Button — circular */}
@@ -664,7 +732,9 @@ const Manual = () => {
                     )}
                     <Scale className={`w-7 h-7 transition-transform duration-200 ${!tareActive && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
                   </button>
-                  <span className="text-[14px] font-bold uppercase tracking-wider text-slate-700">Tare</span>
+                  <span className="text-[14px] font-bold uppercase tracking-wider text-slate-700">
+                    {tareActive ? 'Taring...' : 'Tare'}
+                  </span>
                 </div>
 
               </div>
