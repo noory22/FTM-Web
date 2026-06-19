@@ -470,6 +470,23 @@ const ProcessMode = () => {
                     !isResuming &&
                     isPausedUI;
 
+  const playPauseMode = isPausedUI
+    ? 'resume'
+    : (isPlotting || TEST_IN_PROGRESS.has(currentStatus))
+      ? 'pause'
+      : 'start';
+
+  const canPlayPause =
+    playPauseMode === 'start' ? canStart :
+    playPauseMode === 'pause' ? canPause :
+    canResume;
+
+  const handlePlayPause = () => {
+    if (playPauseMode === 'start') handleStart();
+    else if (playPauseMode === 'pause') handlePause();
+    else handleResume();
+  };
+
   // RESET: enabled once a run starts; disabled during homing
   const canReset = isConnected &&
                    !isResetting &&
@@ -757,15 +774,11 @@ const ProcessMode = () => {
             <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-3 shadow-xl shrink-0">
               <h3 className="text-sm font-bold text-gray-900 mb-2">Controls</h3>
               <ControlButtons
-                onStart={handleStart}
-                onPause={handlePause}
-                onResume={handleResume}
+                onPlayPause={handlePlayPause}
+                playPauseMode={playPauseMode}
+                canPlayPause={canPlayPause}
                 onReset={handleReset}
-                canStart={canStart}
-                canPause={canPause}
-                canResume={canResume}
                 canReset={canReset}
-                isPaused={isPausedUI}
               />
             </div>
 
@@ -777,15 +790,11 @@ const ProcessMode = () => {
         {!isXl && (
           <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-200/80 shadow-2xl p-3 z-20">
             <ControlButtons
-              onStart={handleStart}
-              onPause={handlePause}
-              onResume={handleResume}
+              onPlayPause={handlePlayPause}
+              playPauseMode={playPauseMode}
+              canPlayPause={canPlayPause}
               onReset={handleReset}
-              canStart={canStart}
-              canPause={canPause}
-              canResume={canResume}
               canReset={canReset}
-              isPaused={isPausedUI}
             />
           </div>
         )}
@@ -867,70 +876,52 @@ const InfoRow = ({ label, value, highlight, accent }) => (
   </div>
 );
 
-/** The three control buttons with PAUSE/RESUME toggle */
-const ControlButtons = ({ onStart, onPause, onResume, onReset, canStart, canPause, canResume, canReset, isPaused }) => (
-  <div className="flex space-x-2 sm:space-x-3 max-w-2xl mx-auto">
-    {/* START / RESUME button */}
-    {isPaused ? (
+/** Play/Pause toggle + Reset controls */
+const ControlButtons = ({ onPlayPause, playPauseMode, canPlayPause, onReset, canReset }) => {
+  const isPauseMode = playPauseMode === 'pause';
+  const label = playPauseMode === 'start' ? 'START' : playPauseMode === 'pause' ? 'PAUSE' : 'RESUME';
+  const buttonId =
+    playPauseMode === 'start' ? 'btn-start' :
+    playPauseMode === 'pause' ? 'btn-pause' :
+    'btn-resume';
+
+  return (
+    <div className="flex space-x-2 sm:space-x-3 max-w-2xl mx-auto">
       <button
-        id="btn-resume"
-        onClick={onResume}
-        disabled={!canResume}
+        id={buttonId}
+        onClick={onPlayPause}
+        disabled={!canPlayPause}
         className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${
-          canResume
-            ? "bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-xl shadow-green-500/25 border border-green-400/30 hover:scale-[1.02]"
+          canPlayPause
+            ? isPauseMode
+              ? "bg-gradient-to-br from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white shadow-xl shadow-yellow-500/25 border border-yellow-400/30 hover:scale-[1.02]"
+              : "bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-xl shadow-green-500/25 border border-green-400/30 hover:scale-[1.02]"
             : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
         }`}
       >
-        <Play className="w-4 h-4 sm:w-5 sm:h-5" />
-        <span>RESUME</span>
+        {isPauseMode ? (
+          <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
+        ) : (
+          <Play className="w-4 h-4 sm:w-5 sm:h-5" />
+        )}
+        <span>{label}</span>
       </button>
-    ) : (
+
       <button
-        id="btn-start"
-        onClick={onStart}
-        disabled={!canStart}
+        id="btn-reset"
+        onClick={onReset}
+        disabled={!canReset}
         className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${
-          canStart
-            ? "bg-gradient-to-br from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white shadow-xl shadow-green-500/25 border border-green-400/30 hover:scale-[1.02]"
+          canReset
+            ? "bg-gradient-to-br from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-xl shadow-red-500/25 border border-red-400/30 hover:scale-[1.02]"
             : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
         }`}
       >
-        <Play className="w-4 h-4 sm:w-5 sm:h-5" />
-        <span>START</span>
+        <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+        <span>RESET</span>
       </button>
-    )}
-
-    {/* PAUSE button */}
-    <button
-      id="btn-pause"
-      onClick={onPause}
-      disabled={!canPause}
-      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${
-        canPause
-          ? "bg-gradient-to-br from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white shadow-xl shadow-yellow-500/25 border border-yellow-400/30 hover:scale-[1.02]"
-          : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
-      }`}
-    >
-      <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
-      <span>PAUSE</span>
-    </button>
-
-    {/* RESET button */}
-    <button
-      id="btn-reset"
-      onClick={onReset}
-      disabled={!canReset}
-      className={`flex-1 flex items-center justify-center space-x-2 px-3 py-3 rounded-xl font-bold text-sm sm:text-base transition-all transform ${
-        canReset
-          ? "bg-gradient-to-br from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white shadow-xl shadow-red-500/25 border border-red-400/30 hover:scale-[1.02]"
-          : "bg-gray-100 cursor-not-allowed text-gray-400 border border-gray-200"
-      }`}
-    >
-      <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
-      <span>RESET</span>
-    </button>
-  </div>
-);
+    </div>
+  );
+};
 
 export default ProcessMode;

@@ -14,6 +14,36 @@ import {
 } from 'lucide-react';
 import { getVisibleNavigationGroups, pageTitles } from './navigation.js';
 
+const getStoredTestType = () => {
+  try {
+    const raw = localStorage.getItem('selectedConfig');
+    if (!raw) return null;
+    const config = JSON.parse(raw);
+    return config.testType || null;
+  } catch {
+    return null;
+  }
+};
+
+const syncModeCoilsForRoute = async (pathname) => {
+  if (pathname.includes('2-point')) {
+    return window.api.twoPointActivate();
+  }
+  if (pathname.includes('3-point')) {
+    return window.api.threePointActivate();
+  }
+  if (pathname.includes('manual-mode')) {
+    return window.api.manualModeActivate();
+  }
+  if (pathname.includes('process-mode')) {
+    const testType = getStoredTestType();
+    if (testType === '2-point') return window.api.twoPointActivate();
+    if (testType === '3-point') return window.api.threePointActivate();
+    return null;
+  }
+  return window.api.deactivateManual();
+};
+
 const AppShell = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -80,14 +110,9 @@ const AppShell = () => {
     const updateModeFromPath = async () => {
       if (connectionStatus !== 'connected' || emergencyActive) return;
       try {
-        if (location.pathname.includes('2-point')) {
-          await window.api?.twoPointActivate?.();
-        } else if (location.pathname.includes('3-point')) {
-          await window.api?.threePointActivate?.();
-        } else if (location.pathname.includes('manual-mode')) {
-          await window.api?.manualModeActivate?.();
-        } else {
-          await window.api?.deactivateManual?.();
+        const result = await syncModeCoilsForRoute(location.pathname);
+        if (result && result.success === false) {
+          console.error('Mode coil activation failed:', result.message || result);
         }
       } catch (err) {
         console.error('Error auto-activating mode based on route:', err);
@@ -95,6 +120,18 @@ const AppShell = () => {
     };
     updateModeFromPath();
   }, [location.pathname, connectionStatus, emergencyActive]);
+
+  useEffect(() => {
+    const handleModbusReconnect = (event) => {
+      if (event.detail !== 'connected' || emergencyActive) return;
+      syncModeCoilsForRoute(location.pathname).catch((err) => {
+        console.error('Error re-activating mode after reconnect:', err);
+      });
+    };
+
+    window.addEventListener('modbus-status-change', handleModbusReconnect);
+    return () => window.removeEventListener('modbus-status-change', handleModbusReconnect);
+  }, [location.pathname, emergencyActive]);
 
   useEffect(() => {
     let mounted = true;

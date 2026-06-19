@@ -200,6 +200,108 @@ let plcState = {
   lastUpdated: 0
 };
 
+// Remember the active test mode so coils are applied after connect/reconnect
+let activeTestMode = null; // '2-point' | '3-point' | 'manual' | null
+
+function updatePlcModeState(mode) {
+  if (mode === '2-point') {
+    plcState.twoPoint = true;
+    plcState.threePoint = false;
+    plcState.manual = false;
+    plcState.manualExit = true;
+  } else if (mode === '3-point') {
+    plcState.twoPoint = false;
+    plcState.threePoint = true;
+    plcState.manual = false;
+    plcState.manualExit = true;
+  } else if (mode === 'manual') {
+    plcState.twoPoint = false;
+    plcState.threePoint = false;
+    plcState.manual = true;
+    plcState.manualExit = false;
+  } else {
+    plcState.twoPoint = false;
+    plcState.threePoint = false;
+    plcState.manual = false;
+    plcState.manualExit = true;
+  }
+}
+
+async function writeTwoPointCoils() {
+  console.log('🔌 Writing COIL_2POINT(2008) = true, COIL_3POINT(2009) = false, COIL_MANUAL(2001) = false, COIL_MANUAL_EXIT(2002) = true');
+  await client.writeCoil(COIL_2POINT, true);
+  await client.writeCoil(COIL_3POINT, false);
+  await client.writeCoil(COIL_MANUAL, false);
+  await client.writeCoil(COIL_MANUAL_EXIT, true);
+  updatePlcModeState('2-point');
+}
+
+async function writeThreePointCoils() {
+  console.log('🔌 Writing COIL_3POINT(2009) = true, COIL_2POINT(2008) = false, COIL_MANUAL(2001) = false, COIL_MANUAL_EXIT(2002) = true');
+  await client.writeCoil(COIL_3POINT, true);
+  await client.writeCoil(COIL_2POINT, false);
+  await client.writeCoil(COIL_MANUAL, false);
+  await client.writeCoil(COIL_MANUAL_EXIT, true);
+  updatePlcModeState('3-point');
+}
+
+async function writeManualModeCoils() {
+  console.log('🔌 Writing COIL_MANUAL(2001) = true, COIL_MANUAL_EXIT(2002) = false, COIL_2POINT = false, COIL_3POINT = false');
+  await client.writeCoil(COIL_MANUAL, true);
+  await client.writeCoil(COIL_MANUAL_EXIT, false);
+  await client.writeCoil(COIL_2POINT, false);
+  await client.writeCoil(COIL_3POINT, false);
+  updatePlcModeState('manual');
+}
+
+async function writeDeactivateModeCoils() {
+  await client.writeCoil(COIL_MANUAL, false);
+  await client.writeCoil(COIL_MANUAL_EXIT, true);
+  await client.writeCoil(COIL_2POINT, false);
+  await client.writeCoil(COIL_3POINT, false);
+  updatePlcModeState(null);
+}
+
+async function applyActiveTestMode() {
+  if (!isConnected || !client.isOpen) return false;
+
+  try {
+    switch (activeTestMode) {
+      case '2-point':
+        await writeTwoPointCoils();
+        break;
+      case '3-point':
+        await writeThreePointCoils();
+        break;
+      case 'manual':
+        await writeManualModeCoils();
+        break;
+      default:
+        return false;
+    }
+    console.log(`✅ Re-applied active test mode after connect: ${activeTestMode}`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Failed to apply active test mode (${activeTestMode}):`, error.message);
+    return false;
+  }
+}
+
+function queueOrExecuteModeActivation(commandName, mode, writeFn) {
+  activeTestMode = mode;
+  if (!isConnected) {
+    updatePlcModeState(mode);
+    console.log(`⏳ ${commandName}: queued until Modbus connects (mode: ${mode})`);
+    return Promise.resolve({ success: true, pending: true, mode });
+  }
+
+  return safeExecute(commandName, async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+    await writeFn();
+    return { success: true };
+  });
+}
+
 // Queue items: { id, type: 'write', task: async () => {}, resolve, reject }
 const commandQueue = [];
 let isLoopRunning = false;
@@ -281,6 +383,10 @@ async function connectModbus(targetPort) {
     // Update UI to show connection status
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('modbus-status', 'connected');
+    }
+
+    if (activeTestMode) {
+      await applyActiveTestMode();
     }
 
     return true;
@@ -1738,25 +1844,18 @@ ipcMain.handle("manual", async () => {
 
 ipcMain.handle("manual-mode-activate", async () => {
   console.log("⚡ IPC: manual-mode-activate command received");
-  return await safeExecute("MANUAL-MODE-ACTIVATE", async () => {
-    if (!isConnected) throw new Error('Modbus not connected');
-    console.log(`🔌 Writing COIL_MANUAL(2001) = true, COIL_MANUAL_EXIT(2002) = false, COIL_2POINT = false, COIL_3POINT = false`);
-    const res1 = await client.writeCoil(COIL_MANUAL, true);
-    const res2 = await client.writeCoil(COIL_MANUAL_EXIT, false);
-    await client.writeCoil(COIL_2POINT, false);
-    await client.writeCoil(COIL_3POINT, false);
-    console.log(`✅ Modbus write responses:`, res1, res2);
-    return { success: true };
-  });
+  return queueOrExecuteModeActivation("MANUAL-MODE-ACTIVATE", "manual", writeManualModeCoils);
 });
 
 ipcMain.handle("manual-mode-deactivate", async () => {
+  activeTestMode = null;
+  if (!isConnected) {
+    updatePlcModeState(null);
+    return { success: true, pending: true };
+  }
   return await safeExecute("MANUAL-MODE-DEACTIVATE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
-    await client.writeCoil(COIL_MANUAL, false);
-    await client.writeCoil(COIL_MANUAL_EXIT, true);
-    await client.writeCoil(COIL_2POINT, false);
-    await client.writeCoil(COIL_3POINT, false);
+    await writeDeactivateModeCoils();
     return { success: true };
   });
 });
@@ -1764,48 +1863,36 @@ ipcMain.handle("manual-mode-deactivate", async () => {
 
 ipcMain.handle("two-point-activate", async () => {
   console.log("⚡ IPC: two-point-activate command received");
-  return await safeExecute("TWO-POINT-ACTIVATE", async () => {
-    if (!isConnected) throw new Error('Modbus not connected');
-    console.log(`🔌 Writing COIL_2POINT(2008) = true, COIL_3POINT(2009) = false, COIL_MANUAL(2001) = false, COIL_MANUAL_EXIT(2002) = true`);
-    await client.writeCoil(COIL_2POINT, true);
-    await client.writeCoil(COIL_3POINT, false);
-    await client.writeCoil(COIL_MANUAL, false);
-    await client.writeCoil(COIL_MANUAL_EXIT, true);
-    return { success: true };
-  });
+  return queueOrExecuteModeActivation("TWO-POINT-ACTIVATE", "2-point", writeTwoPointCoils);
 });
 
 ipcMain.handle("three-point-activate", async () => {
   console.log("⚡ IPC: three-point-activate command received");
-  return await safeExecute("THREE-POINT-ACTIVATE", async () => {
-    if (!isConnected) throw new Error('Modbus not connected');
-    console.log(`🔌 Writing COIL_3POINT(2009) = true, COIL_2POINT(2008) = false, COIL_MANUAL(2001) = false, COIL_MANUAL_EXIT(2002) = true`);
-    await client.writeCoil(COIL_3POINT, true);
-    await client.writeCoil(COIL_2POINT, false);
-    await client.writeCoil(COIL_MANUAL, false);
-    await client.writeCoil(COIL_MANUAL_EXIT, true);
-    return { success: true };
-  });
+  return queueOrExecuteModeActivation("THREE-POINT-ACTIVATE", "3-point", writeThreePointCoils);
 });
 
 ipcMain.handle("deactivate-manual", async () => {
+  activeTestMode = null;
+  if (!isConnected) {
+    updatePlcModeState(null);
+    return { success: true, pending: true };
+  }
   return await safeExecute("DEACTIVATE-MANUAL", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
-    await client.writeCoil(COIL_MANUAL, false);
-    await client.writeCoil(COIL_MANUAL_EXIT, true);
-    await client.writeCoil(COIL_2POINT, false);
-    await client.writeCoil(COIL_3POINT, false);
+    await writeDeactivateModeCoils();
     return { success: true };
   });
 });
 
 ipcMain.handle("disable-manual-mode", async () => {
+  activeTestMode = null;
+  if (!isConnected) {
+    updatePlcModeState(null);
+    return { manualModeDisabled: true, pending: true };
+  }
   return await safeExecute("DISABLE-MANUAL-MODE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
-    await client.writeCoil(COIL_MANUAL, false);
-    await client.writeCoil(COIL_MANUAL_EXIT, true);
-    await client.writeCoil(COIL_2POINT, false);
-    await client.writeCoil(COIL_3POINT, false);
+    await writeDeactivateModeCoils();
     return { manualModeDisabled: true };
   });
 });
