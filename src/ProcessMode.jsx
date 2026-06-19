@@ -106,6 +106,12 @@ const ProcessMode = () => {
   const [showConfigPanel, setShowConfigPanel] = useState(false);
   const prevStatusRef = useRef("IDLE");
   const [isPaused, setIsPaused] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const [isResuming, setIsResuming] = useState(false);
+  const [isPausing, setIsPausing] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [isPlotting, setIsPlotting] = useState(false);
+  const isPausedUI = (isPaused || isPausing) && !isResuming;
   const [isTestCompleted, setIsTestCompleted] = useState(false);
   const [completedTimer, setCompletedTimer] = useState(null);
 
@@ -116,8 +122,8 @@ const ProcessMode = () => {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
-  const isXl = screenW >= 1920;
-  const isLg = screenW >= 1366 && screenW < 1920;
+  const isXl = screenW >= 1280;
+  const isLg = screenW >= 1024 && screenW < 1280;
 
   // ── Load config from localStorage and activate appropriate mode ─────────────────
   useEffect(() => {
@@ -245,21 +251,32 @@ const ProcessMode = () => {
         const prev = prevStatusRef.current;
         prevStatusRef.current = status;
 
+        // ── Clear pending states on PLC status transitions ───────────────────
+        if (isStarting && status !== "READY" && status !== "IDLE") {
+          setIsStarting(false);
+        }
+        if (isResuming && (status === "RUNNING" || status === "SEARCHING CONTACT")) {
+          setIsResuming(false);
+        }
+        if (isResetting && (status === "HOMING" || status === "READY" || status === "IDLE")) {
+          setIsResetting(false);
+        }
+
         // ── Handle status transitions ────────────────────────────────────────
 
-        // Check if test completed (status changes from RUNNING to HOMING or COMPLETED)
-        if ((prev === "RUNNING" || prev === "SEARCHING CONTACT") && status === "HOMING") {
-          console.log("📊 Test completed - machine homing");
-          setIsTestCompleted(true);
-          // Stop CSV logging
-          if (isLogging) {
-            await stopCsvLogging();
-          }
-          // Clear chart data when test completes
+        // Check if test completed (status changes to HOMING)
+        if (status === "HOMING") {
+          setIsPlotting(false);
           setChartData([]);
           lastLogRef.current = { distance: null, force: null };
           
-          // After homing completes, status will change to READY or COMPLETED
+          if (isLogging) {
+            stopCsvLogging();
+          }
+
+          if (prev === "RUNNING" || prev === "SEARCHING CONTACT") {
+            setIsTestCompleted(true);
+          }
         }
 
         // When status becomes READY after HOMING, set COMPLETED briefly then READY
@@ -284,50 +301,37 @@ const ProcessMode = () => {
           setCompletedTimer(timer);
         }
 
-        // Handle pause state
-        if (status === "PAUSED") {
-          setIsPaused(true);
-        } else {
-          setIsPaused(false);
-        }
+        // ── Chart & log while plotting is active ────────────────────────────
+        if (isPlotting && !isPausedUI && probeDistance !== null && force !== null) {
+          setChartData((prev) => {
+            const lastPoint = prev[prev.length - 1];
+            if (!lastPoint || lastPoint.x !== probeDistance || lastPoint.y !== force) {
+              return [...prev, { x: probeDistance, y: force }];
+            }
+            return prev;
+          });
 
-        // ── Chart & log while in active statuses ────────────────────────────
-        if (GRAPH_ACTIVE.has(status) && probeDistance !== null && force !== null) {
-          // Only add to chart if not paused
-          if (!isPaused) {
-            setChartData((prev) => [
-              ...prev,
-              { x: probeDistance, y: force },
-            ]);
-
-            // CSV row append
-            if (
-              isLogging &&
-              (lastLogRef.current.distance !== probeDistance ||
-                lastLogRef.current.force !== force)
-            ) {
-              try {
-                await window.api.appendCSV({
-                  data: { distance: probeDistance, force_mN: force, temperature: 0 },
-                  config: selectedConfig,
-                });
-                lastLogRef.current = { distance: probeDistance, force };
-              } catch (e) {
-                console.error("CSV append error:", e);
-              }
+          // CSV row append
+          if (
+            isLogging &&
+            (lastLogRef.current.distance !== probeDistance ||
+              lastLogRef.current.force !== force)
+          ) {
+            try {
+              window.api.appendCSV({
+                data: { distance: probeDistance, force_mN: force, temperature: 0 },
+                config: selectedConfig,
+              });
+              lastLogRef.current = { distance: probeDistance, force };
+            } catch (e) {
+              console.error("CSV append error:", e);
             }
           }
         }
 
-        // ── Auto CSV: start when entering SEARCHING CONTACT or RUNNING ──────
-        if (CSV_ACTIVE.has(status) && !isLogging && !isPaused) {
-          await startCsvLogging();
-        }
-
-        // ── Clear chart on reset ─────────────────────────────────────────────
-        if (status === "HOMING" && prev !== "HOMING" && !isTestCompleted) {
-          setChartData([]);
-          lastLogRef.current = { distance: null, force: null };
+        // ── Auto CSV: start when plotting starts ──────────────────────
+        if (isPlotting && !isLogging && !isPausedUI) {
+          startCsvLogging();
         }
 
       } catch (e) {
@@ -338,59 +342,92 @@ const ProcessMode = () => {
     const intervalId = setInterval(poll, 100);
     poll();
     return () => clearInterval(intervalId);
-  }, [isConnected, isLogging, selectedConfig, startCsvLogging, stopCsvLogging, isPaused, isTestCompleted, completedTimer]);
+  }, [
+    isConnected,
+    isLogging,
+    selectedConfig,
+    startCsvLogging,
+    stopCsvLogging,
+    isPaused,
+    isStarting,
+    isResuming,
+    isPausing,
+    isResetting,
+    isPlotting,
+    isTestCompleted,
+    completedTimer
+  ]);
 
   // ── Button handlers ───────────────────────────────────────────────────────────
   const handleStart = async () => {
+    setIsStarting(true);
+    setIsPlotting(true);
     try {
       const res = await window.api.start();
       if (res?.success) {
-        // Reset paused state
         setIsPaused(false);
         console.log("✅ START command sent to PLC");
       } else {
         console.error("Start failed:", res?.message);
+        setIsStarting(false);
+        setIsPlotting(false);
       }
     } catch (e) {
       console.error("Start error:", e);
+      setIsStarting(false);
+      setIsPlotting(false);
     }
   };
 
   const handlePause = async () => {
+    setIsPausing(true);
+    setIsPaused(true);
     try {
       const res = await window.api.stop();
       if (res?.success) {
-        setIsPaused(true);
+        setIsPausing(false);
         console.log("⏸️ PAUSE command sent to PLC");
       } else {
         console.error("Pause failed:", res?.message);
+        setIsPausing(false);
+        setIsPaused(false);
       }
     } catch (e) {
       console.error("Pause error:", e);
+      setIsPausing(false);
+      setIsPaused(false);
     }
   };
 
   const handleResume = async () => {
+    setIsResuming(true);
+    setIsPaused(false);
+    setIsPausing(false);
     try {
       const res = await window.api.start();
       if (res?.success) {
-        setIsPaused(false);
         console.log("▶️ RESUME command sent to PLC");
       } else {
         console.error("Resume failed:", res?.message);
+        setIsResuming(false);
+        setIsPaused(true);
       }
     } catch (e) {
       console.error("Resume error:", e);
+      setIsResuming(false);
+      setIsPaused(true);
     }
   };
 
   const handleReset = async () => {
+    setIsResetting(true);
     try {
       const res = await window.api.reset();
       if (res?.success) {
         setChartData([]);
         lastLogRef.current = { distance: null, force: null };
         setIsPaused(false);
+        setIsPlotting(false);
         setIsTestCompleted(false);
         if (completedTimer) {
           clearTimeout(completedTimer);
@@ -400,24 +437,47 @@ const ProcessMode = () => {
         console.log("🔄 RESET command sent to PLC");
       } else {
         console.error("Reset failed:", res?.message);
+        setIsResetting(false);
       }
     } catch (e) {
       console.error("Reset error:", e);
+      setIsResetting(false);
     }
   };
 
   // Button enable rules
   const status = liveData.machineStatus;
   const currentStatus = status; // Use actual status from PLC
-  
+
   // Determine button states
-  const canStart = isConnected && START_ALLOWED.has(currentStatus);
-  const canPause = isConnected && PAUSE_ALLOWED.has(currentStatus) && !isPaused;
-  const canResume = isConnected && isPaused && currentStatus === "PAUSED";
-  const canReset = isConnected && (RESET_ALLOWED.has(currentStatus) || currentStatus === "READY");
+  // START: only enabled when machine is READY (not paused/starting/resetting/resuming)
+  const canStart = isConnected &&
+                   !isStarting &&
+                   !isResetting &&
+                   !isResuming &&
+                   !isPausedUI &&
+                   currentStatus === "READY";
+
+  // PAUSE: enabled as soon as START is pressed (isPlotting=true), independent of intermediate PLC status
+  const canPause = isConnected &&
+                   isPlotting &&
+                   !isPausedUI &&
+                   !isPausing &&
+                   !isResetting;
+
+  const canResume = isConnected &&
+                    !isResetting &&
+                    !isResuming &&
+                    isPausedUI;
+
+  // RESET: enabled once a run starts; disabled during homing
+  const canReset = isConnected &&
+                   !isResetting &&
+                   currentStatus !== "HOMING" &&
+                   (currentStatus === "READY" || RESET_ALLOWED.has(currentStatus));
 
   // Check if test is in progress (block navigation)
-  const isTestInProgress = TEST_IN_PROGRESS.has(currentStatus) || isPaused;
+  const isTestInProgress = TEST_IN_PROGRESS.has(currentStatus) || isPausedUI || isPlotting;
 
   // ── Chart config ──────────────────────────────────────────────────────────────
   const chartConfig = {
@@ -502,7 +562,7 @@ const ProcessMode = () => {
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 text-gray-900 overflow-hidden flex flex-col">
+    <div className="h-full bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 text-gray-900 overflow-hidden flex flex-col">
 
       {/* ── Info Modal ─────────────────────────────────────────────────────────── */}
       {showInfoModal && (
@@ -561,7 +621,7 @@ const ProcessMode = () => {
 
       {/* ── Header ─────────────────────────────────────────────────────────────── */}
       <header className="shrink-0 bg-white/80 backdrop-blur-xl border-b border-gray-200/80 shadow-sm">
-        <div className={`${isXl ? "px-6 py-4" : isLg ? "px-4 py-3" : "px-3 py-2.5"} flex items-center justify-between`}>
+        <div className={`${isXl ? "px-4 py-2" : isLg ? "px-4 py-2" : "px-3 py-2"} flex items-center justify-between`}>
           <div className="flex items-center space-x-3 min-w-0">
             <div className="min-w-0">
               <h1 className={`${isXl ? "text-2xl" : "text-xl"} font-bold bg-gradient-to-r from-gray-900 to-blue-700 bg-clip-text text-transparent truncate`}>
@@ -601,10 +661,10 @@ const ProcessMode = () => {
       </header>
 
       {/* ── Main layout ───────────────────────────────────────────────────────── */}
-      <main className={`relative flex ${isXl ? "flex-row" : "flex-col"} flex-1 ${isXl ? "gap-5 p-5" : isLg ? "gap-4 p-4" : "gap-3 p-3"} min-h-0 overflow-hidden`}>
+      <main className={`relative flex ${isXl ? "flex-row" : "flex-col"} flex-1 ${isXl ? "gap-3 p-3" : isLg ? "gap-3 p-3" : "gap-3 p-3"} min-h-0 overflow-hidden`}>
 
         {/* ── Left / main column ─────────────────────────────────────────────── */}
-        <section className={`flex-1 flex flex-col ${isXl ? "gap-5" : "gap-3"} min-w-0 min-h-0`}>
+        <section className={`flex-1 flex flex-col ${isXl ? "gap-3" : "gap-3"} min-w-0 min-h-0 ${!isXl ? "pb-16" : ""}`}>
 
           {/* Status Bar */}
           <div className={`shrink-0 bg-white/70 backdrop-blur-xl rounded-xl border border-gray-200/80 shadow-lg ${isXl ? "px-5 py-3" : "px-4 py-2.5"} flex items-center justify-between`}>
@@ -612,7 +672,7 @@ const ProcessMode = () => {
               <div className={`w-2.5 h-2.5 rounded-full ${meta.dot}`} />
               <span className="text-xs text-gray-500 font-medium uppercase tracking-wider">Machine Status</span>
               <span className={`text-sm font-bold ${meta.color}`}>
-                {isPaused ? "PAUSED" : currentStatus}
+                {isPausedUI ? "PAUSED" : currentStatus}
               </span>
             </div>
             <div className="flex items-center space-x-3">
@@ -622,7 +682,7 @@ const ProcessMode = () => {
                   <span>LOGGING</span>
                 </span>
               )}
-              {isPaused && (
+              {isPausedUI && (
                 <span className="flex items-center space-x-1.5 text-xs font-semibold text-yellow-600 bg-yellow-50 border border-yellow-200 px-2.5 py-1 rounded-lg">
                   <span className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
                   <span>PAUSED</span>
@@ -663,7 +723,7 @@ const ProcessMode = () => {
                 <span className="text-xs text-gray-400">{chartData.length} pts</span>
               )}
             </div>
-            <div className="flex-1 min-h-0" style={{ minHeight: isXl ? "500px" : "220px" }}>
+            <div className="flex-1 min-h-0" style={{ minHeight: "180px" }}>
               <Line data={chartConfig} options={chartOptions} redraw={false} />
             </div>
           </div>
@@ -671,19 +731,19 @@ const ProcessMode = () => {
 
         {/* ── Right sidebar (xl screens) ─────────────────────────────────────── */}
         {isXl && (
-          <section className="w-80 flex flex-col gap-5 min-h-0">
+          <section className="w-80 flex flex-col gap-3 min-h-0 overflow-y-auto">
 
             {/* Config card */}
             <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-4 shadow-xl shrink-0">
-              <h3 className="text-base font-bold text-gray-900 mb-3">Active Configuration</h3>
+              <h3 className="text-sm font-bold text-gray-900 mb-2">Active Configuration</h3>
               <ConfigDetails config={selectedConfig} is3Point={is3Point} liveData={liveData} />
             </div>
 
             {/* Live sensors card */}
-            <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-4 shadow-xl shrink-0">
-              <h3 className="text-base font-bold text-gray-900 mb-1">Real-time Sensors</h3>
-              <p className="text-xs text-gray-400 mb-3">Live monitoring data</p>
-              <div className={`grid gap-3 ${is3Point ? "grid-cols-2" : "grid-cols-1"}`}>
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-3 shadow-xl shrink-0">
+              <h3 className="text-sm font-bold text-gray-900 mb-0.5">Real-time Sensors</h3>
+              <p className="text-xs text-gray-400 mb-2">Live monitoring data</p>
+              <div className={`grid gap-2 ${is3Point ? "grid-cols-2" : "grid-cols-1"}`}>
                 <SensorCard label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" gradient="from-violet-500 to-indigo-500" bg="from-violet-50 to-indigo-50" border="border-violet-200/60" textColor="text-violet-700" icon={<Ruler className="w-4 h-4 text-white" />} />
                 <SensorCard label="Vertical Distance"    value={liveData.probeDistance}    unit="mm" gradient="from-green-500 to-emerald-500" bg="from-green-50 to-emerald-50"   border="border-green-200/60"  textColor="text-green-700"  icon={<Ruler className="w-4 h-4 text-white" />} />
                 <SensorCard label="Force"             value={liveData.force}            unit="mN" gradient="from-cyan-500 to-blue-500"    bg="from-cyan-50 to-blue-50"       border="border-cyan-200/60"   textColor="text-blue-700"   icon={<Gauge className="w-4 h-4 text-white" />} />
@@ -693,43 +753,29 @@ const ProcessMode = () => {
               </div>
             </div>
 
-            {/* Status card */}
-            <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-4 shadow-xl shrink-0">
-              <h3 className="text-base font-bold text-gray-900 mb-3">Machine Status</h3>
-              <div className={`flex items-center space-x-3 rounded-xl px-4 py-3 border ${meta.badge} border-current/20`}>
-                <div className={`w-3 h-3 rounded-full shrink-0 ${meta.dot}`} />
-                <span className={`text-lg font-bold tracking-wide ${meta.color}`}>
-                  {isPaused ? "PAUSED" : currentStatus}
-                </span>
-              </div>
+            {/* ── Process Controls (inside sidebar on xl screens) ────────── */}
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl border border-gray-200/80 p-3 shadow-xl shrink-0">
+              <h3 className="text-sm font-bold text-gray-900 mb-2">Controls</h3>
+              <ControlButtons
+                onStart={handleStart}
+                onPause={handlePause}
+                onResume={handleResume}
+                onReset={handleReset}
+                canStart={canStart}
+                canPause={canPause}
+                canResume={canResume}
+                canReset={canReset}
+                isPaused={isPausedUI}
+              />
             </div>
 
-            {/* Spacer to push controls down */}
-            <div className="flex-1" />
           </section>
         )}
 
-        {/* ── Process Controls ──────────────────────────────────────────────────
-            Fixed bottom bar on small screens, inline on xl ─────────────────── */}
-        <div className={`${isXl ? "hidden" : "fixed bottom-0 left-0 right-0"} bg-white/95 backdrop-blur-xl border-t border-gray-200/80 shadow-2xl p-3 sm:p-4 z-20 shrink-0`}>
-          <ControlButtons
-            onStart={handleStart}
-            onPause={handlePause}
-            onResume={handleResume}
-            onReset={handleReset}
-            canStart={canStart}
-            canPause={canPause}
-            canResume={canResume}
-            canReset={canReset}
-            isPaused={isPaused}
-          />
-        </div>
-      </main>
-
-      {/* xl-screen controls (inside sidebar at bottom) */}
-      {isXl && (
-        <div className="shrink-0 bg-white/70 backdrop-blur-xl border-t border-gray-200/80 shadow-2xl px-5 py-4">
-          <div className="max-w-xl mx-auto">
+        {/* ── Process Controls ─────────────────────────────────────────────────
+            Fixed bottom bar on non-xl screens only ──────────────────────── */}
+        {!isXl && (
+          <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-200/80 shadow-2xl p-3 z-20">
             <ControlButtons
               onStart={handleStart}
               onPause={handlePause}
@@ -739,11 +785,11 @@ const ProcessMode = () => {
               canPause={canPause}
               canResume={canResume}
               canReset={canReset}
-              isPaused={isPaused}
+              isPaused={isPausedUI}
             />
           </div>
-        </div>
-      )}
+        )}
+      </main>
     </div>
   );
 };

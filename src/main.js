@@ -150,23 +150,23 @@ const REG_SETTINGS_FORCE = 30;    // 1 register (16-bit integer) — Settings Fo
 // Helper: Convert two 16-bit Modbus registers → 32-bit float (Little-Endian word order)
 // Most Delta PLCs send floats as: word[0] = low word, word[1] = high word
 // -------------------------
-// Helper function declaration has been simplified
-function registersToFloat32LE(lowWord, highWord) {
-  const buf = new ArrayBuffer(4);
-  const view = new DataView(buf);
-  view.setUint16(0, lowWord, true); // low word at byte 0
-  view.setUint16(2, highWord, true); // high word at byte 2
-  return view.getFloat32(0, true);   // read as little-endian float
-}
+// // Helper function declaration has been simplified
+// function registersToFloat32LE(lowWord, highWord) {
+//   const buf = new ArrayBuffer(4);
+//   const view = new DataView(buf);
+//   view.setUint16(0, lowWord, true); // low word at byte 0
+//   view.setUint16(2, highWord, true); // high word at byte 2
+//   return view.getFloat32(0, true);   // read as little-endian float
+// }
 
-// Alternative: Big-Endian word order (try this if LE gives wrong result)
-function registersToFloat32BE(highWord, lowWord) {
-  const buf = new ArrayBuffer(4);
-  const view = new DataView(buf);
-  view.setUint16(0, highWord, false);
-  view.setUint16(2, lowWord, false);
-  return view.getFloat32(0, false);
-}
+// // Alternative: Big-Endian word order (try this if LE gives wrong result)
+// function registersToFloat32BE(highWord, lowWord) {
+//   const buf = new ArrayBuffer(4);
+//   const view = new DataView(buf);
+//   view.setUint16(0, highWord, false);
+//   view.setUint16(2, lowWord, false);
+//   return view.getFloat32(0, false);
+// }
 
 // Global State
 let isConnected = false;
@@ -1143,30 +1143,50 @@ async function processModbusLoop() {
         console.error('❌ TEST_DIST read error:', e.message);
       }
 
+      // try {
+      //   const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
+      //   const rawLow = fRes.data[0];
+      //   const rawHigh = fRes.data[1];
+      //   // Try both: plain 16-bit int (rawLow) and 32-bit float interpretations
+      //   const asInt16 = rawLow;                              // raw as plain integer
+      //   const asScaled = rawLow / 10.0;                      // common: value * 0.1
+      //   const floatLE = registersToFloat32LE(rawLow, rawHigh);
+      //   const floatBE = registersToFloat32BE(rawLow, rawHigh);
+      //   // Log every 5s
+      //   if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
+      //     console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}]`);
+      //     console.log(`   → as Int16:  ${asInt16} mN`);
+      //     console.log(`   → as /10:    ${asScaled} mN`);
+      //     console.log(`   → as LE f32: ${isFinite(floatLE) ? floatLE.toFixed(3) : 'NaN'} mN`);
+      //     console.log(`   → as BE f32: ${isFinite(floatBE) ? floatBE.toFixed(3) : 'NaN'} mN`);
+      //     plcState._forceLogTime = Date.now();
+      //   }
+      //   // Use raw Int16 as default — change to asScaled or floatLE if the value looks wrong
+      //   plcState.force_mN = isFinite(asInt16) ? asInt16 : 0;
+      //   cycleSuccess = true;
+      // } catch (e) {
+      //   console.error('❌ REG_FORCE read error:', e.message);
+      // }
       try {
-        const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
-        const rawLow = fRes.data[0];
-        const rawHigh = fRes.data[1];
-        // Try both: plain 16-bit int (rawLow) and 32-bit float interpretations
-        const asInt16 = rawLow;                              // raw as plain integer
-        const asScaled = rawLow / 10.0;                      // common: value * 0.1
-        const floatLE = registersToFloat32LE(rawLow, rawHigh);
-        const floatBE = registersToFloat32BE(rawLow, rawHigh);
+        const fRes = await client.readHoldingRegisters(REG_FORCE, 1); // Read only 1 register
+        const rawValue = fRes.data[0];
+        
+        // Convert from unsigned 16-bit to signed 16-bit (two's complement)
+        const signedValue = rawValue > 32767 ? rawValue - 65536 : rawValue;
+        
         // Log every 5s
         if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
-          console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}]`);
-          console.log(`   → as Int16:  ${asInt16} mN`);
-          console.log(`   → as /10:    ${asScaled} mN`);
-          console.log(`   → as LE f32: ${isFinite(floatLE) ? floatLE.toFixed(3) : 'NaN'} mN`);
-          console.log(`   → as BE f32: ${isFinite(floatBE) ? floatBE.toFixed(3) : 'NaN'} mN`);
+          console.log(`📊 REG_FORCE(R54) raw: ${rawValue} → signed: ${signedValue} mN`);
           plcState._forceLogTime = Date.now();
         }
-        // Use raw Int16 as default — change to asScaled or floatLE if the value looks wrong
-        plcState.force_mN = isFinite(asInt16) ? asInt16 : 0;
+        
+        // Store the signed value
+        plcState.force_mN = signedValue;
         cycleSuccess = true;
       } catch (e) {
         console.error('❌ REG_FORCE read error:', e.message);
       }
+      
 
       try {
         const mdRes = await client.readHoldingRegisters(REG_MANUAL_DISTANCE, 1);
@@ -1809,15 +1829,9 @@ ipcMain.handle("disable-manual-mode", async () => {
 ipcMain.handle("tare", async () => {
   return await safeExecute("TARE", async () => {
     if (!isConnected) throw new Error("Modbus not connected");
-    // Pulse the tare coil (turn ON then OFF after 2 seconds)
     await client.writeCoil(COIL_TARE, true);
-    setTimeout(async () => {
-      try {
-        await client.writeCoil(COIL_TARE, false);
-      } catch (e) {
-        console.error("Error turning off TARE coil:", e.message);
-      }
-    }, 2000);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await client.writeCoil(COIL_TARE, false);
     return { success: true };
   });
 });

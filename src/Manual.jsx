@@ -241,18 +241,19 @@ const Manual = () => {
 
   const handleTare = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+    if (tareActive) return;
+
     try {
       setTareActive(true);
       const result = await window.api.tare();
       if (result.success) {
         console.log("Tare command executed");
-        setTimeout(() => setTareActive(false), 3000);
       } else {
-        setTareActive(false);
         console.error("Tare command failed:", result.message);
       }
     } catch (error) {
       console.error("Tare error:", error);
+    } finally {
       setTareActive(false);
     }
   };
@@ -719,12 +720,12 @@ const Manual = () => {
                 <div className="flex flex-col items-center gap-2">
                   <button
                     onClick={handleTare}
-                    disabled={!connectionStatus.connected || emergencyActive || !manualModeActive}
+                    disabled={!connectionStatus.connected || emergencyActive || !manualModeActive || tareActive}
                     className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400
                       ${tareActive
                         ? 'bg-teal-500 border-teal-600 text-white shadow-lg shadow-teal-200'
                         : 'bg-teal-50 border-teal-300 text-teal-700 hover:bg-teal-100 hover:border-teal-400 hover:shadow-md active:scale-95'}
-                      ${(!connectionStatus.connected || emergencyActive || !manualModeActive) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                      ${(!connectionStatus.connected || emergencyActive || !manualModeActive || tareActive) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
                     `}
                   >
                     {tareActive && (
