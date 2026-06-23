@@ -36,6 +36,7 @@ const syncModeCoilsForRoute = async (pathname) => {
     return window.api.manualModeActivate();
   }
   if (pathname.includes('process-mode')) {
+    // Legacy /process-mode redirect fallback — resolve via stored config
     const testType = getStoredTestType();
     if (testType === '2-point') return window.api.twoPointActivate();
     if (testType === '3-point') return window.api.threePointActivate();
@@ -217,13 +218,14 @@ const AppShell = () => {
         console.error('Failed to deactivate manual mode:', error);
       }
       navigate('/');
-      } else if (path.includes('process-mode')) {
+    } else if (path.includes('process-mode')) {
+      // Covers /process-mode, /process-mode/2-point, /process-mode/3-point
       const safeStatuses = ['IDLE', 'READY', 'UNKNOWN', 'COMPLETED'];
       if (!safeStatuses.includes(plcData.machineStatus)) {
         alert("Please STOP and RESET the process before navigating away.");
         return;
       }
-      // Navigate to dashboard instead of load config
+      // Navigate to dashboard
       navigate('/');
     } else {
       navigate('/');

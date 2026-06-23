@@ -63,7 +63,9 @@ export const pageTitles = {
   '/handle-config/load': 'Load Configuration',
   '/handle-config/delete': 'Delete Configurations',
   '/manual-mode': 'Manual Mode',
-  '/process-mode': 'Process Mode',
+  // '/process-mode' removed — no longer used
+  '/process-mode/2-point': '2-Point Test — Process Mode',
+  '/process-mode/3-point': '3-Point Test — Process Mode',
   '/process-logs': 'Process Logs',
   '/test-selection': 'Test Selection',
   '/test-action/2-point': '2-Point Test Actions',

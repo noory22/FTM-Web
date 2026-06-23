@@ -111,7 +111,7 @@ const MainMenu = () => {
       }
 
       localStorage.setItem('selectedConfig', JSON.stringify({ ...config, testType: '2-point' }));
-      navigate('/process-mode');
+      navigate('/process-mode/2-point');
 
     } catch (error) {
       console.error("PLC transfer failed:", error);
@@ -144,7 +144,7 @@ const MainMenu = () => {
       }
 
       localStorage.setItem('selectedConfig', JSON.stringify({ ...config, testType: '3-point' }));
-      navigate('/process-mode');
+      navigate('/process-mode/3-point');
 
     } catch (error) {
       console.error("PLC transfer failed:", error);

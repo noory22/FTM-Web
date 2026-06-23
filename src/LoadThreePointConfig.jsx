@@ -54,7 +54,7 @@ const LoadThreePointConfig = () => {
       }
 
       localStorage.setItem('selectedConfig', JSON.stringify({ ...selectedConfig, testType: '3-point' }));
-      navigate('/process-mode');
+      navigate('/process-mode/3-point');
 
     } catch (error) {
       console.error("PLC transfer failed:", error);

@@ -8,7 +8,9 @@ import CreateConfig from "./CreateConfig.jsx"; // Add this import
 import HandleConfig from "./HandleConfig.jsx";
 import Manual from "./Manual.jsx";
 import ProcessLogs from "./ProcessLogs.jsx";
-import ProcessMode from "./ProcessMode.jsx"; // add this import
+// ProcessMode.jsx removed — navigation goes directly to /process-mode/2-point or /process-mode/3-point
+import ProcessModeTwoPoint from "./ProcessModeTwoPoint.jsx";
+import ProcessModeThreePoint from "./ProcessModeThreePoint.jsx";
 import UpdateChecker from "./UpdateChecker.jsx";
 import TestSelection from "./TestSelection.jsx";
 import CreateTwoPointConfig from "./CreateTwoPointConfig.jsx";
@@ -32,7 +34,9 @@ const routesWithSafetyAlert = [
   "/", // MainMenu
   "/handle-config/load", // LoadConfig
   "/manual-mode", // ManualMode
-  "/process-mode", // ProcessMode
+  // "/process-mode" removed — no longer used
+  "/process-mode/2-point", // ProcessModeTwoPoint
+  "/process-mode/3-point", // ProcessModeThreePoint
 ];
 
 const App = () => {
@@ -87,13 +91,26 @@ const App = () => {
             }
           />
 
-          {/* Route for ProcessMode with SafetyAlert */}
+          {/* /process-mode route removed — all navigation uses /process-mode/2-point or /process-mode/3-point directly */}
+
+          {/* Route for 2-Point Process Mode */}
           <Route
-            path="/process-mode"
+            path="/process-mode/2-point"
             element={
               <>
                 {/* <SafetyAlert /> */}
-                <ProcessMode />
+                <ProcessModeTwoPoint />
+              </>
+            }
+          />
+
+          {/* Route for 3-Point Process Mode */}
+          <Route
+            path="/process-mode/3-point"
+            element={
+              <>
+                {/* <SafetyAlert /> */}
+                <ProcessModeThreePoint />
               </>
             }
           />
