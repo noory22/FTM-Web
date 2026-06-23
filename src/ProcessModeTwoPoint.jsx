@@ -20,8 +20,10 @@ import {
   Activity,
   Gauge,
   Ruler,
+  AlertCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
 
 // ── Chart.js registration ──────────────────────────────────────────────────────
 ChartJS.register(
@@ -102,6 +104,33 @@ const ProcessModeTwoPoint = () => {
   // ── UI ────────────────────────────────────────────────────────────────────────
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showConfigPanel, setShowConfigPanel] = useState(false);
+  const [showForceLimitModal, setShowForceLimitModal] = useState(false);
+  const [hasAcknowledgedForceLimit, setHasAcknowledgedForceLimit] = useState(false);
+  const [showNoForceModal, setShowNoForceModal] = useState(false);
+  const [hasAcknowledgedNoForce, setHasAcknowledgedNoForce] = useState(false);
+
+  const showForceLimitModalRef = useRef(false);
+  const hasAcknowledgedForceLimitRef = useRef(false);
+  const showNoForceModalRef = useRef(false);
+  const hasAcknowledgedNoForceRef = useRef(false);
+
+  useEffect(() => {
+    showForceLimitModalRef.current = showForceLimitModal;
+  }, [showForceLimitModal]);
+
+  useEffect(() => {
+    hasAcknowledgedForceLimitRef.current = hasAcknowledgedForceLimit;
+  }, [hasAcknowledgedForceLimit]);
+
+  useEffect(() => {
+    showNoForceModalRef.current = showNoForceModal;
+  }, [showNoForceModal]);
+
+  useEffect(() => {
+    hasAcknowledgedNoForceRef.current = hasAcknowledgedNoForce;
+  }, [hasAcknowledgedNoForce]);
+
+
   const prevStatusRef = useRef("IDLE");
   const [isPaused, setIsPaused] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -238,6 +267,44 @@ const ProcessModeTwoPoint = () => {
           catheterDistance: catheterDistance !== null ? catheterDistance.toFixed(2) : "--",
           force:            force            !== null ? force.toFixed(2)            : "--",
         });
+
+        // ── Check Force Limit ────────────────────────────────────────────────
+        if (selectedConfig && selectedConfig.forceLimit !== undefined && selectedConfig.forceLimit !== null && force !== null) {
+          const limitVal = parseFloat(selectedConfig.forceLimit);
+          if (!isNaN(limitVal) && force >= limitVal) {
+            if (!showForceLimitModalRef.current && !hasAcknowledgedForceLimitRef.current) {
+              setShowForceLimitModal(true);
+            }
+          } else {
+            if (hasAcknowledgedForceLimitRef.current) {
+              setHasAcknowledgedForceLimit(false);
+            }
+          }
+        }
+
+        // ── Check No Force Detected ──────────────────────────────────────────
+        if (
+          status === "SEARCHING CONTACT" &&
+          selectedConfig &&
+          selectedConfig.probeTravelLimit !== undefined &&
+          selectedConfig.probeTravelLimit !== null &&
+          probeDistance !== null &&
+          force !== null
+        ) {
+          const travelLimit = parseFloat(selectedConfig.probeTravelLimit);
+          if (!isNaN(travelLimit) && probeDistance >= travelLimit && force <= 0.1) {
+            if (!showNoForceModalRef.current && !hasAcknowledgedNoForceRef.current) {
+              setShowNoForceModal(true);
+            }
+          }
+        }
+
+        // Reset the latch when machine status is no longer SEARCHING CONTACT
+        if (status !== "SEARCHING CONTACT" && hasAcknowledgedNoForceRef.current) {
+          setHasAcknowledgedNoForce(false);
+        }
+
+
 
         const prev = prevStatusRef.current;
         prevStatusRef.current = status;
@@ -423,7 +490,12 @@ const ProcessModeTwoPoint = () => {
           setCompletedTimer(null);
         }
         await stopCsvLogging();
+        setShowForceLimitModal(false);
+        setHasAcknowledgedForceLimit(false);
+        setShowNoForceModal(false);
+        setHasAcknowledgedNoForce(false);
         console.log("🔄 RESET command sent to PLC");
+
       } else {
         console.error("Reset failed:", res?.message);
         setIsResetting(false);
@@ -433,6 +505,25 @@ const ProcessModeTwoPoint = () => {
       setIsResetting(false);
     }
   };
+
+  const handleForceLimitReset = async () => {
+    try {
+      await window.api.writeCoilM303(true);
+      setShowForceLimitModal(false);
+      setHasAcknowledgedForceLimit(true);
+      console.log("✅ Force Limit Reset clicked: wrote M303=true and closed dialog");
+    } catch (e) {
+      console.error("Error resetting force limit:", e);
+    }
+  };
+
+  const handleNoForceOk = () => {
+    setShowNoForceModal(false);
+    setHasAcknowledgedNoForce(true);
+    console.log("✅ No Force Ok clicked: closed dialog");
+  };
+
+
 
   // Button enable rules
   const status = liveData.machineStatus;
@@ -562,6 +653,67 @@ const ProcessModeTwoPoint = () => {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="h-full bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 text-gray-900 overflow-hidden flex flex-col">
+
+      {/* ── No Force Detected Dialog ─────────────────────────────────────────── */}
+      {showNoForceModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-yellow-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-gradient-to-r from-yellow-50 to-amber-50 px-6 py-5 border-b border-yellow-100 flex items-center justify-center flex-col text-center">
+              <div className="p-3 bg-yellow-100 rounded-full mb-3 text-yellow-600 animate-bounce">
+                <Info className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-extrabold text-yellow-950">No Force detected</h3>
+            </div>
+            <div className="p-6 text-center space-y-4">
+              <p className="text-gray-600 text-sm">
+                The probe travel limit of <span className="font-bold text-yellow-600">{selectedConfig?.probeTravelLimit} mm</span> was reached during the contact search, but no force was detected.
+              </p>
+              <div className="bg-yellow-50/50 rounded-xl p-3 border border-yellow-100">
+                <p className="text-xs text-yellow-800 font-medium">
+                  Current Distance: <span className="text-sm font-bold">{liveData.probeDistance} mm</span>
+                </p>
+              </div>
+              <button
+                onClick={handleNoForceOk}
+                className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center space-x-2 text-base cursor-pointer font-medium"
+              >
+                <span>OK</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Maximum Force Limit Reached Dialog ────────────────────────────────── */}
+      {showForceLimitModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-red-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-gradient-to-r from-red-50 to-orange-50 px-6 py-5 border-b border-red-100 flex items-center justify-center flex-col text-center">
+              <div className="p-3 bg-red-100 rounded-full mb-3 text-red-600 animate-bounce">
+                <AlertCircle className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-extrabold text-red-950">Maximum Force Limit Acheived</h3>
+            </div>
+            <div className="p-6 text-center space-y-4">
+              <p className="text-gray-600 text-sm">
+                The real-time force has reached or exceeded the configured limit of <span className="font-bold text-red-600">{selectedConfig?.forceLimit} mN</span>.
+              </p>
+              <div className="bg-red-50/50 rounded-xl p-3 border border-red-100">
+                <p className="text-xs text-red-800 font-medium">
+                  Current Force: <span className="text-sm font-bold">{liveData.force} mN</span>
+                </p>
+              </div>
+              <button
+                onClick={handleForceLimitReset}
+                className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center space-x-2 text-base cursor-pointer"
+              >
+                <RotateCcw className="w-5 h-5" />
+                <span>RESET</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Info Modal ─────────────────────────────────────────────────────────── */}
       {showInfoModal && (

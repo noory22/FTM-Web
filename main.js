@@ -137,6 +137,8 @@ const COIL_3POINT = 2009;          // M9
 const COIL_START = 2010;           // M10
 const COIL_STOP = 2011;            // M11
 const COIL_RESET = 2012;           // M12
+const COIL_M303 = 2303;            // M303
+
 
 const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe DistanceG
 const TEST_DIST = 73; // 1 register (16-bit integer) — TEST Distance that used using 2 & 3 point mode
@@ -1790,6 +1792,7 @@ ipcMain.handle("start", async () => {
 
     await client.writeCoil(COIL_STOP, false);
     await client.writeCoil(COIL_RESET, false);
+    await client.writeCoil(COIL_M303, false);
     await client.writeCoil(COIL_START, true);
 
     return { startInitiated: true };
@@ -1946,6 +1949,15 @@ ipcMain.handle("write-coil-settings", async (event, value) => {
     if (!isConnected) throw new Error("Modbus not connected");
     console.log(`🔌 Writing COIL_SETTINGS(2302) = ${value ? 1 : 0}`);
     await client.writeCoil(COIL_SETTINGS, value);
+    return { success: true };
+  });
+});
+
+ipcMain.handle("write-coil-m303", async (event, value) => {
+  return await safeExecute("WRITE-COIL-M303", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    console.log(`🔌 Writing COIL_M303(2303) = ${value ? 1 : 0}`);
+    await client.writeCoil(COIL_M303, value);
     return { success: true };
   });
 });
