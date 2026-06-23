@@ -1597,7 +1597,7 @@ function convertFromCSV(csvStr, headers) {
 
 const TWO_POINT_DIR = path.join(app.getPath('documents'), 'FTM-2-point Test');
 const TWO_POINT_FILE = path.join(TWO_POINT_DIR, 'configs.csv');
-const TWO_POINT_HEADERS = ['configName', 'probeTravelLimit', 'forceLimit', 'testSpeed'];
+const TWO_POINT_HEADERS = ['configName', 'catheterToLoadCellDistance', 'probeTravelLimit', 'forceLimit', 'testSpeed'];
 
 async function ensure2PointConfig() {
   if (!fs.existsSync(TWO_POINT_DIR)) {
@@ -2173,17 +2173,25 @@ ipcMain.handle("send-2point-config", async (event, config) => {
       }
 
       // Parse configuration values
+      const catheterToLoadCellDistance = parseFloat(config.catheterToLoadCellDistance);
       const probeTravelLimit = parseFloat(config.probeTravelLimit);
       const forceLimit = parseFloat(config.forceLimit);
       const testSpeed = parseFloat(config.testSpeed);
 
       // Validate values
-      if (isNaN(probeTravelLimit) || isNaN(forceLimit) || isNaN(testSpeed)) {
+      if (isNaN(catheterToLoadCellDistance) || isNaN(probeTravelLimit) || isNaN(forceLimit) || isNaN(testSpeed)) {
         console.error('❌ Invalid 2-point configuration values');
         return false;
       }
 
       const results = [];
+
+      // 0. Write Catheter To LoadCell Distance to R82
+      const catheterDistanceValue = Math.round(catheterToLoadCellDistance);
+      console.log(`📝 Writing Catheter To LoadCell Distance: ${catheterDistanceValue} to R82`);
+      await client.writeRegister(82, catheterDistanceValue);
+      await delay(150);
+      results.push({ register: '82 (R82)', value: catheterDistanceValue, success: true });
 
       // 1. Write Probe_travel_limit to R1
       const probeTravelLimitValue = Math.round(probeTravelLimit);

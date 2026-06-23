@@ -39,6 +39,7 @@ const LoadTwoPointConfig = () => {
     try {
       // Call the 2-point config API with all required parameters
       const success = await window.api.send2PointConfig({
+        catheterToLoadCellDistance: selectedConfig.catheterToLoadCellDistance, // Maps to R82
         probeTravelLimit: selectedConfig.probeTravelLimit,  // Maps to R1
         forceLimit: selectedConfig.forceLimit,              // Maps to R2
         testSpeed: selectedConfig.testSpeed                 // Maps to R3
@@ -105,9 +106,9 @@ const LoadTwoPointConfig = () => {
                         >
                           <div>
                             <p className="font-medium text-slate-800">{config.configName}</p>
-                            <p className="text-sm text-slate-500 mt-1">
-                              {config.forceLimit}mN, {config.probeTravelLimit}mm
-                            </p>
+                             <p className="text-sm text-slate-500 mt-1">
+                               {config.catheterToLoadCellDistance ? `${config.catheterToLoadCellDistance}mm, ` : ''}{config.forceLimit}mN, {config.probeTravelLimit}mm
+                             </p>
                           </div>
                         </button>
                       ))
@@ -140,8 +141,15 @@ const LoadTwoPointConfig = () => {
                     className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 text-slate-700 focus:outline-none"
                   />
                 </div>
-
-
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Catheter To LoadCell Distance (mm)</label>
+                  <input
+                    type="text"
+                    value={selectedConfig ? selectedConfig.catheterToLoadCellDistance : ''}
+                    readOnly
+                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 text-slate-700 focus:outline-none"
+                  />
+                </div>
 
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Probe Travel Limit (mm)</label>

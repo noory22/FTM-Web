@@ -6,7 +6,7 @@ const CreateTwoPointConfig = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     configName: '',
-    // testLength: '',
+    catheterToLoadCellDistance: '',
     probeTravelLimit: '',
     forceLimit: '',
     testSpeed: ''
@@ -28,7 +28,7 @@ const CreateTwoPointConfig = () => {
       newErrors.configName = 'Configuration name cannot exceed 30 characters';
     }
 
-    const numericFields = ['probeTravelLimit', 'forceLimit', 'testSpeed'];
+    const numericFields = ['catheterToLoadCellDistance', 'probeTravelLimit', 'forceLimit', 'testSpeed'];
     numericFields.forEach(field => {
       if (!formData[field].toString().trim()) {
         newErrors[field] = 'This field is required';
@@ -107,7 +107,7 @@ const CreateTwoPointConfig = () => {
         setErrors({});
         setFormData({
           configName: '',
-          // testLength: '',
+          catheterToLoadCellDistance: '',
           probeTravelLimit: '',
           forceLimit: '',
           testSpeed: ''
@@ -178,18 +178,18 @@ const CreateTwoPointConfig = () => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Test Length (mm)</label>
+                <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Catheter To LoadCell Distance (mm)</label>
                   <input
                     type="text"
-                    name="testLength"
-                    value={formData.testLength}
+                    name="catheterToLoadCellDistance"
+                    value={formData.catheterToLoadCellDistance}
                     onChange={handleInputChange}
-                    placeholder="Enter Test Length"
-                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.testLength ? 'border-red-300' : 'border-slate-200'}`}
+                    placeholder="Enter Catheter To LoadCell Distance"
+                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.catheterToLoadCellDistance ? 'border-red-300' : 'border-slate-200'}`}
                   />
-                  {errors.testLength && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.testLength}</span></p>}
-                </div> */}
+                  {errors.catheterToLoadCellDistance && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.catheterToLoadCellDistance}</span></p>}
+                </div>
 
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Probe Travel Limit (mm)</label>

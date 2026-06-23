@@ -967,6 +967,7 @@ const ConfigDetails = ({ config, liveData }) => {
     <div className="space-y-2">
       <InfoRow label="Config Name"       value={config.configName} highlight />
       <InfoRow label="Test Type"         value="2-Point" />
+      <InfoRow label="Catheter To LoadCell Distance" value={config.catheterToLoadCellDistance ? `${config.catheterToLoadCellDistance} mm` : "--"} />
       <InfoRow label="Probe Travel Limit" value={config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--"} />
       <InfoRow label="Force Limit"       value={config.forceLimit ? `${config.forceLimit} mN` : "--"} />
       <InfoRow label="Test Speed"        value={config.testSpeed ? `${config.testSpeed} mm/min` : "--"} />

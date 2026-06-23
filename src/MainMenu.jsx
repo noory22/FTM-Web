@@ -100,6 +100,7 @@ const MainMenu = () => {
     try {
       // Call the 2-point config API with all required parameters
       const success = await window.api.send2PointConfig({
+        catheterToLoadCellDistance: config.catheterToLoadCellDistance, // Maps to R82
         probeTravelLimit: config.probeTravelLimit,  // Maps to R1
         forceLimit: config.forceLimit,              // Maps to R2
         testSpeed: config.testSpeed                 // Maps to R3
