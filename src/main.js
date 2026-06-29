@@ -523,27 +523,37 @@ let isHardwareStopActive = false;
 // ============================
 // CSV LOGGING FUNCTIONS
 // ============================
+// CSV LOGGING FUNCTIONS
+// ============================
 
 async function startCSVLogging(config) {
   try {
-    const logsDir = path.join(app.getPath("documents"), "CTTM_Logs");
+    const logsDir = path.join(app.getPath("documents"), "FTM_Logs");
 
     if (!fs.existsSync(logsDir)) {
       fs.mkdirSync(logsDir, { recursive: true });
     }
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    
+    // Naming of the log file:
+    // If config.testType is '2-point', filename prefix is '2-point'
+    // If config.testType is '3-point', filename prefix is '3-point'
+    // Otherwise fallback to 'Process'
+    const prefix = config.testType === '2-point' ? '2-point' : (config.testType === '3-point' ? '3-point' : 'Process');
+    
     csvFilePath = path.join(
       logsDir,
-      `${config.configName || "Process"}_${timestamp}.csv`
+      `${prefix}_${config.configName || "Process"}_${timestamp}.csv`
     );
 
     csvStream = fs.createWriteStream(csvFilePath, { flags: "a" });
 
-    // CSV HEADER
-    csvStream.write(
-      "Timestamp,Distance(mm),Force(mN),Temperature,ConfigName,PathLength,ThresholdForce\n"
-    );
+    // New format: Line 1 config metadata as JSON string prefixed with //CONFIG:
+    // Line 2: Column headers
+    const configJson = JSON.stringify(config);
+    csvStream.write(`//CONFIG:${configJson}\n`);
+    csvStream.write("Timestamp,Steps,Distance_R70(mm),Distance_R73(mm),Distance_R71(mm),Force(mN)\n");
 
     return { success: true, filePath: csvFilePath };
   } catch (error) {
@@ -558,14 +568,14 @@ async function appendCSVData(data, config) {
       throw new Error("CSV stream not initialized");
     }
 
+    // New data row: Timestamp, Steps, Distance_R70, Distance_R73, Distance_R71, Force
     const row = [
       new Date().toISOString(),
-      data.distance,
-      data.force_mN,
-      data.temperature,
-      config.configName,
-      config.pathlength,
-      config.thresholdForce
+      data.steps !== undefined && data.steps !== null ? data.steps : '--',
+      data.distance_R70 !== undefined && data.distance_R70 !== null ? data.distance_R70 : '--',
+      data.distance_R73 !== undefined && data.distance_R73 !== null ? data.distance_R73 : '--',
+      data.distance_R71 !== undefined && data.distance_R71 !== null ? data.distance_R71 : '--',
+      data.force_mN !== undefined && data.force_mN !== null ? data.force_mN : '--'
     ].join(",") + "\n";
 
     csvStream.write(row);
@@ -590,7 +600,7 @@ async function stopCSVLogging() {
 
 async function getLogFiles() {
   try {
-    const logsDir = path.join(app.getPath("documents"), "CTTM_Logs");
+    const logsDir = path.join(app.getPath("documents"), "FTM_Logs");
 
     if (!fs.existsSync(logsDir)) {
       return [];
@@ -608,8 +618,20 @@ async function getLogFiles() {
       // Extract configuration name and timestamp from filename
       const fileNameWithoutExt = file.replace('.csv', '');
       const parts = fileNameWithoutExt.split('_');
-      const configName = parts.slice(0, -1).join('_');
-      const timestamp = parts[parts.length - 1];
+      
+      let testType = null;
+      let configName = '';
+      let timestamp = '';
+      
+      // Detect if prefixed with test type
+      if (parts[0] === '2-point' || parts[0] === '3-point') {
+        testType = parts[0];
+        configName = parts.slice(1, -1).join('_');
+        timestamp = parts[parts.length - 1];
+      } else {
+        configName = parts.slice(0, -1).join('_');
+        timestamp = parts[parts.length - 1];
+      }
 
       // Parse the date properly
       let formattedDate = 'Invalid Date';
@@ -621,16 +643,16 @@ async function getLogFiles() {
           const [_, year, month, day, hour, minute, second] = match;
           const date = new Date(year, month - 1, day, hour, minute, second);
           formattedDate = date.toLocaleString();
-          console.error("Date Formatted: ", formattedDate);
-
         }
       } catch (e) {
         console.log('Date parsing error:', e.message);
       }
 
+      const displayName = testType ? `${testType} : ${configName}` : `${configName}`;
+
       logFiles.push({
         filename: file,
-        displayName: `${configName}`,
+        displayName: displayName,
         filePath: filePath,
         date: stats.mtime.toISOString().split('T')[0],
         time: timestamp,
@@ -641,7 +663,6 @@ async function getLogFiles() {
 
     // Sort by modification time (newest first)
     return logFiles.sort((a, b) => b.mtime - a.mtime);
-
 
   } catch (error) {
     console.error('Error getting log files:', error);
@@ -658,25 +679,65 @@ async function readLogFile(filePath) {
       return { success: false, error: 'Empty or invalid CSV file' };
     }
 
-    const headers = lines[0].split(',');
-    const configData = extractConfigFromCsv(data);
+    // Check if the file starts with //CONFIG: JSON header
+    const isNewFormat = lines[0].startsWith('//CONFIG:');
+    
+    let configData = null;
+    let dataStartLine = 1;
+
+    if (isNewFormat) {
+      try {
+        const configJson = lines[0].substring('//CONFIG:'.length);
+        configData = JSON.parse(configJson);
+      } catch (e) {
+        console.error("Failed to parse JSON config header:", e.message);
+      }
+      dataStartLine = 2; // Line 0: CONFIG, Line 1: Columns, Line 2: First data row
+    } else {
+      configData = extractConfigFromCsv(data);
+      dataStartLine = 1; // Line 0: Columns, Line 1: First data row
+    }
+
     const processData = [];
 
-    // Skip header line
-    for (let i = 1; i < lines.length; i++) {
+    // Parse the data rows
+    for (let i = dataStartLine; i < lines.length; i++) {
       if (lines[i].trim() === '') continue;
 
       const values = lines[i].split(',');
-      if (values.length >= 3) {
-        let force = parseFloat(values[2]) || 0;
-        let distance = parseFloat(values[1]) || 0;
+      
+      if (isNewFormat) {
+        if (values.length >= 6) {
+          let steps = parseInt(values[1]) || 0;
+          let distanceR70 = parseFloat(values[2]) || 0;
+          let distanceR73 = parseFloat(values[3]) || 0; // R73 distance
+          let distanceR71 = parseFloat(values[4]) || 0;
+          let force = parseFloat(values[5]) || 0;
 
-        processData.push({
-          time: i - 1,
-          distance: distance,
-          force: force, // Keep in mN for consistency with real-time graph
-          temperature: parseFloat(values[3]) || 0
-        });
+          processData.push({
+            time: i - dataStartLine,
+            steps: steps,
+            distanceR70: distanceR70,
+            distance: distanceR73, // distance property mapped to R73 for graph plotting
+            distanceR71: distanceR71,
+            force: force,
+            temperature: 0
+          });
+        }
+      } else {
+        // Legacy file parsing
+        if (values.length >= 3) {
+          let distance = parseFloat(values[1]) || 0;
+          let force = parseFloat(values[2]) || 0;
+          let temp = parseFloat(values[3]) || 0;
+
+          processData.push({
+            time: i - dataStartLine,
+            distance: distance,
+            force: force,
+            temperature: temp
+          });
+        }
       }
     }
 

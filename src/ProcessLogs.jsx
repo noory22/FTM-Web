@@ -46,6 +46,8 @@ const ProcessLogs = () => {
 
   const [showCurvesDropdown, setShowCurvesDropdown] = useState(false);
 
+  const testType = selectedLog && selectedLog.configData ? (selectedLog.configData.testType || 'legacy') : 'legacy';
+
   useEffect(() => {
     loadLogFiles();
   }, []);
@@ -123,19 +125,35 @@ const ProcessLogs = () => {
 
       if (result.success) {
         // Use the config data from CSV
-        const configData = result.configData;
-        const pathLength = configData.pathlength || configData.pathLength;
+        const configData = result.configData || {};
+        const testType = configData.testType || 'legacy';
+        
+        let fData = [];
+        let bData = [];
+        
+        if (testType === '2-point') {
+          fData = result.data || [];
+          bData = [];
+        } else if (testType === '3-point') {
+          const testLength = configData.testLength || '--';
+          const motion = extractFullMotionData(result.data || [], testLength);
+          fData = motion.forwardData;
+          bData = motion.backwardData;
+        } else {
+          // Legacy format
+          const pathLength = configData.pathlength || configData.pathLength;
+          const motion = extractFullMotionData(result.data || [], pathLength);
+          fData = motion.forwardData;
+          bData = motion.backwardData;
+        }
 
-        // Extract forward and backward motion data
-        const { forwardData, backwardData } = extractFullMotionData(result.data, pathLength);
-
-        setForwardData(forwardData);
-        setBackwardData(backwardData);
+        setForwardData(fData);
+        setBackwardData(bData);
 
         setSelectedLog({
           ...log,
-          forwardData,
-          backwardData,
+          forwardData: fData,
+          backwardData: bData,
           configData: configData,
           rawData: result.rawData,
         });
@@ -434,87 +452,212 @@ const ProcessLogs = () => {
 
                   {/* Main Parameters Grid */}
                   <div className="grid grid-cols-2 gap-3">
-                    {/* Path Length */}
-                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-3 border border-green-200">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <Ruler className="w-4 h-4 text-green-600" />
-                        <p className="text-slate-600 text-xs font-medium">
-                          Path Length
-                        </p>
-                      </div>
-                      <p className="text-green-700 font-bold">
-                        {selectedLog.configData.pathlength || selectedLog.configData.pathLength || "--"} mm
-                      </p>
-                    </div>
-
-                    {/* Threshold Force */}
-                    <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl p-3 border border-cyan-200">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <Gauge className="w-4 h-4 text-blue-600" />
-                        <p className="text-slate-600 text-xs font-medium">
-                          Threshold Force
-                        </p>
-                      </div>
-                      <p className="text-blue-700 font-bold">
-                        {selectedLog.configData.thresholdForce || "--"} mN
-                      </p>
-                    </div>
-
-                    {/* Temperature */}
-                    {/*<div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-xl p-3 border border-orange-200">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <Thermometer className="w-4 h-4 text-orange-600" />
-                        <p className="text-slate-600 text-xs font-medium">
-                          Temperature
-                        </p>
-                      </div>
-                      <p className="text-orange-700 font-bold">
-                        {selectedLog.configData.temperature || "--"} °C
-                      </p>
-                    </div> */}
-                    <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-3 border border-purple-200">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <RotateCcw className="w-4 h-4 text-purple-600" />
-                        <p className="text-slate-600 text-xs font-medium">
-                          Insertion Stroke Length
-                        </p>
-                      </div>
-                      <p className="text-purple-700 font-bold">
-                        {selectedLog.configData.insertionLength || "--"} mm
-                      </p>
-                    </div>
-
-                    {/* Retraction Length */}
-                    <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-3 border border-purple-200">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <RotateCcw className="w-4 h-4 text-purple-600" />
-                        <p className="text-slate-600 text-xs font-medium">
-                          Retraction Stroke Length
-                        </p>
-                      </div>
-                      <p className="text-purple-700 font-bold">
-                        {selectedLog.configData.retractionLength || "--"} mm
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Number of Curves */}
-                  {/* {selectedLog.configData.numberOfCurves &&
-                    selectedLog.configData.numberOfCurves !== "--" && (
-                      <div className="bg-gradient-to-r from-yellow-50 to-amber-50 rounded-xl p-4 border border-yellow-200">
-                        <div className="flex items-center space-x-2 mb-1">
-                          <AlertCircle className="w-4 h-4 text-yellow-600" />
-                          <p className="text-slate-700 text-sm font-medium">
-                            Number of Curves
+                    {testType === '2-point' ? (
+                      <>
+                        {/* Catheter To LoadCell Distance */}
+                        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-3 border border-green-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Ruler className="w-4 h-4 text-green-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Catheter To LoadCell Distance
+                            </p>
+                          </div>
+                          <p className="text-green-700 font-bold">
+                            {selectedLog.configData.catheterToLoadCellDistance || "--"} mm
                           </p>
                         </div>
-                        <p className="text-yellow-700 font-bold text-lg">
-                          {selectedLog.configData.numberOfCurves}
-                        </p>
-                      </div>
-                    )} */}
-                                    {/* Number of Curves with Dropdown */}
-                  {selectedLog.configData.numberOfCurves &&
+
+                        {/* Probe Travel Limit */}
+                        <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl p-3 border border-cyan-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Ruler className="w-4 h-4 text-blue-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Probe Travel Limit
+                            </p>
+                          </div>
+                          <p className="text-blue-700 font-bold">
+                            {selectedLog.configData.probeTravelLimit || "--"} mm
+                          </p>
+                        </div>
+
+                        {/* Force Limit */}
+                        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-3 border border-purple-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Gauge className="w-4 h-4 text-purple-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Force Limit
+                            </p>
+                          </div>
+                          <p className="text-purple-700 font-bold">
+                            {selectedLog.configData.forceLimit || "--"} mN
+                          </p>
+                        </div>
+
+                        {/* Test Speed */}
+                        <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-xl p-3 border border-orange-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <RotateCcw className="w-4 h-4 text-orange-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Test Speed
+                            </p>
+                          </div>
+                          <p className="text-orange-700 font-bold">
+                            {selectedLog.configData.testSpeed || "--"} mm/min
+                          </p>
+                        </div>
+                      </>
+                    ) : testType === '3-point' ? (
+                      <>
+                        {/* Test Length */}
+                        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-3 border border-green-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Ruler className="w-4 h-4 text-green-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Test Length
+                            </p>
+                          </div>
+                          <p className="text-green-700 font-bold">
+                            {selectedLog.configData.testLength || "--"} mm
+                          </p>
+                        </div>
+
+                        {/* Measurement Interval */}
+                        <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl p-3 border border-cyan-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Clock className="w-4 h-4 text-blue-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Measurement Interval
+                            </p>
+                          </div>
+                          <p className="text-blue-700 font-bold">
+                            {selectedLog.configData.measurementInterval || "--"} s
+                          </p>
+                        </div>
+
+                        {/* Probe Travel Limit */}
+                        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-3 border border-purple-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Ruler className="w-4 h-4 text-purple-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Probe Travel Limit
+                            </p>
+                          </div>
+                          <p className="text-purple-700 font-bold">
+                            {selectedLog.configData.probeTravelLimit || "--"} mm
+                          </p>
+                        </div>
+
+                        {/* Force Limit */}
+                        <div className="bg-gradient-to-br from-orange-50 to-red-50 rounded-xl p-3 border border-orange-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Gauge className="w-4 h-4 text-orange-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Force Limit
+                            </p>
+                          </div>
+                          <p className="text-orange-700 font-bold">
+                            {selectedLog.configData.forceLimit || "--"} mN
+                          </p>
+                        </div>
+
+                        {/* Test Speed */}
+                        <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl p-3 border border-indigo-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <RotateCcw className="w-4 h-4 text-indigo-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Test Speed
+                            </p>
+                          </div>
+                          <p className="text-indigo-700 font-bold">
+                            {selectedLog.configData.testSpeed || "--"} mm/min
+                          </p>
+                        </div>
+
+                        {/* Support Span */}
+                        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-3 border border-emerald-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Ruler className="w-4 h-4 text-emerald-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Support Span
+                            </p>
+                          </div>
+                          <p className="text-emerald-700 font-bold">
+                            {selectedLog.configData.supportSpan || "--"} mm
+                          </p>
+                        </div>
+
+                        {/* Horizontal Speed */}
+                        <div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-xl p-3 border border-pink-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <RotateCcw className="w-4 h-4 text-pink-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Horizontal Speed
+                            </p>
+                          </div>
+                          <p className="text-pink-700 font-bold">
+                            {selectedLog.configData.horizontalSpeed || "--"} mm/min
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Path Length */}
+                        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl p-3 border border-green-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Ruler className="w-4 h-4 text-green-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Path Length
+                            </p>
+                          </div>
+                          <p className="text-green-700 font-bold">
+                            {selectedLog.configData.pathlength || selectedLog.configData.pathLength || "--"} mm
+                          </p>
+                        </div>
+
+                        {/* Threshold Force */}
+                        <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl p-3 border border-cyan-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <Gauge className="w-4 h-4 text-blue-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Threshold Force
+                            </p>
+                          </div>
+                          <p className="text-blue-700 font-bold">
+                            {selectedLog.configData.thresholdForce || "--"} mN
+                          </p>
+                        </div>
+
+                        {/* Insertion Length */}
+                        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-3 border border-purple-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <RotateCcw className="w-4 h-4 text-purple-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Insertion Stroke Length
+                            </p>
+                          </div>
+                          <p className="text-purple-700 font-bold">
+                            {selectedLog.configData.insertionLength || "--"} mm
+                          </p>
+                        </div>
+
+                        {/* Retraction Length */}
+                        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl p-3 border border-purple-200">
+                          <div className="flex items-center space-x-2 mb-1">
+                            <RotateCcw className="w-4 h-4 text-purple-600" />
+                            <p className="text-slate-600 text-xs font-medium">
+                              Retraction Stroke Length
+                            </p>
+                          </div>
+                          <p className="text-purple-700 font-bold">
+                            {selectedLog.configData.retractionLength || "--"} mm
+                          </p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Number of Curves with Dropdown */}
+                  {testType !== '2-point' && selectedLog.configData.numberOfCurves &&
                     selectedLog.configData.numberOfCurves !== "--" && (
                       <div className="bg-gradient-to-r from-yellow-50 to-amber-50 rounded-xl border border-yellow-200">
                         <button
@@ -658,12 +801,16 @@ const ProcessLogs = () => {
                   <div className="flex items-center space-x-6 bg-slate-50/50 px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
                     <div className="flex items-center space-x-3">
                       <div className="w-8 h-1 bg-blue-500 rounded-full shadow-sm shadow-blue-500/50" />
-                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Insertion</span>
+                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                        {testType === '2-point' ? 'Test Curve' : 'Insertion'}
+                      </span>
                     </div>
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-1 bg-red-500 rounded-full shadow-sm shadow-red-500/50" />
-                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Retraction</span>
-                    </div>
+                    {testType !== '2-point' && (
+                      <div className="flex items-center space-x-3">
+                        <div className="w-8 h-1 bg-red-500 rounded-full shadow-sm shadow-red-500/50" />
+                        <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Retraction</span>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -723,22 +870,24 @@ const ProcessLogs = () => {
                         strokeWidth={3}
                         dot={false}
                         activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2 }}
-                        name="Insertion"
+                        name={testType === '2-point' ? 'Test Curve' : 'Insertion'}
                         isAnimationActive={false}
                       />
 
                       {/* Retraction (Backward Motion) - Red */}
-                      <Line
-                        data={backwardData}
-                        type="monotone"
-                        dataKey="force"
-                        stroke="#ef4444"
-                        strokeWidth={3}
-                        dot={false}
-                        activeDot={{ r: 6, stroke: '#ef4444', strokeWidth: 2 }}
-                        name="Retraction"
-                        isAnimationActive={false}
-                      />
+                      {testType !== '2-point' && (
+                        <Line
+                          data={backwardData}
+                          type="monotone"
+                          dataKey="force"
+                          stroke="#ef4444"
+                          strokeWidth={3}
+                          dot={false}
+                          activeDot={{ r: 6, stroke: '#ef4444', strokeWidth: 2 }}
+                          name="Retraction"
+                          isAnimationActive={false}
+                        />
+                      )}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>

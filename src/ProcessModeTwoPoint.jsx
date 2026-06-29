@@ -395,7 +395,13 @@ const ProcessModeTwoPoint = () => {
           ) {
             try {
               window.api.appendCSV({
-                data: { distance: probeDistance, force_mN: force, temperature: 0 },
+                data: {
+                  steps: data.stepsToMove,
+                  distance_R70: data.distance,
+                  distance_R73: data.test_Dist,
+                  distance_R71: data.catheterDistance,
+                  force_mN: force
+                },
                 config: selectedConfig,
               });
               lastLogRef.current = { distance: probeDistance, force };
