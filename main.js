@@ -1424,7 +1424,7 @@ async function processModbusLoop() {
     // 5. Yield / Wait
     // Short wait to prevent blocking event loop, but keep high poll rate
     // 20ms = ~50 polls/sec theoretical max (in practice less due to serial latency)
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 1));
   }
 }
 
@@ -1856,9 +1856,6 @@ ipcMain.handle("manual", async () => {
     await client.writeCoil(COIL_MANUAL, true);
     await client.writeCoil(COIL_2POINT, false);
     await client.writeCoil(COIL_3POINT, false);
-    // await client.writeCoil(COIL_RET, false);
-    // await client.writeCoil(COIL_INSERTION, false);
-    // await client.writeCoil(COIL_CLAMP, false);
     return { manualModeActivated: true };
   });
 });

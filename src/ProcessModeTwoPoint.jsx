@@ -114,6 +114,14 @@ const ProcessModeTwoPoint = () => {
   const showNoForceModalRef = useRef(false);
   const hasAcknowledgedNoForceRef = useRef(false);
 
+  const isComponentMounted = useRef(true);
+  useEffect(() => {
+    isComponentMounted.current = true;
+    return () => {
+      isComponentMounted.current = false;
+    };
+  }, []);
+
   useEffect(() => {
     showForceLimitModalRef.current = showForceLimitModal;
   }, [showForceLimitModal]);
@@ -250,6 +258,12 @@ const ProcessModeTwoPoint = () => {
         const data = await window.api.readData();
         if (!data?.success) return;
 
+        // Re-activate 2-point mode on PLC if it turns off while we are on this screen
+        if (data.twoPoint === false && isComponentMounted.current) {
+          console.log("⚠️ 2-Point mode deactivated on PLC, re-activating...");
+          window.api.twoPointActivate().catch(e => console.error("Failed to re-activate 2-point mode:", e));
+        }
+
         const status = data.machineStatusDisplay || "IDLE";
         const probeDistance = data.test_Dist !== undefined && data.test_Dist !== null
           ? parseFloat(data.test_Dist)
@@ -272,7 +286,7 @@ const ProcessModeTwoPoint = () => {
         if (selectedConfig && selectedConfig.forceLimit !== undefined && selectedConfig.forceLimit !== null && force !== null) {
           const limitVal = parseFloat(selectedConfig.forceLimit);
           if (!isNaN(limitVal) && force >= limitVal) {
-            if (!showForceLimitModalRef.current && !hasAcknowledgedForceLimitRef.current) {
+            if (TEST_IN_PROGRESS.has(status) && !showForceLimitModalRef.current && !hasAcknowledgedForceLimitRef.current) {
               setShowForceLimitModal(true);
             }
           } else {
@@ -318,6 +332,12 @@ const ProcessModeTwoPoint = () => {
         }
         if (isResetting && (status === "HOMING" || status === "READY" || status === "IDLE")) {
           setIsResetting(false);
+        }
+
+        // Reset play/pause states when machine is in HOMING or READY and not transitioning
+        if ((status === "HOMING" || status === "READY") && !isStarting && !isResuming) {
+          setIsPaused(false);
+          setIsPlotting(false);
         }
 
         // ── Handle status transitions ────────────────────────────────────────
@@ -847,8 +867,8 @@ const ProcessModeTwoPoint = () => {
 
           {/* Live Telemetry tiles (small screens — above graph) */}
           {!isXl && (
-            <div className="shrink-0 grid gap-2 grid-cols-3">
-              <TeleTile label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" colorClass="from-violet-500 to-indigo-500" bgClass="from-violet-50 to-indigo-50 border-violet-200/60" textClass="text-violet-700" />
+            <div className="shrink-0 grid gap-2 grid-cols-2">
+              {/* <TeleTile label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" colorClass="from-violet-500 to-indigo-500" bgClass="from-violet-50 to-indigo-50 border-violet-200/60" textClass="text-violet-700" /> */}
               <TeleTile label="Vertical Distance"   value={liveData.probeDistance}    unit="mm" colorClass="from-green-500 to-emerald-500" bgClass="from-green-50 to-emerald-50 border-green-200/60"   textClass="text-green-700"  />
               <TeleTile label="Force"               value={liveData.force}            unit="mN" colorClass="from-cyan-500 to-blue-500"     bgClass="from-cyan-50 to-blue-50 border-cyan-200/60"       textClass="text-blue-700"   />
             </div>
@@ -888,7 +908,7 @@ const ProcessModeTwoPoint = () => {
               <h3 className="text-sm font-bold text-gray-900 mb-0.5">Real-time Sensors</h3>
               <p className="text-xs text-gray-400 mb-2">Live monitoring data</p>
               <div className="grid gap-2 grid-cols-1">
-                <SensorCard label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" gradient="from-violet-500 to-indigo-500" bg="from-violet-50 to-indigo-50" border="border-violet-200/60" textColor="text-violet-700" icon={<Ruler className="w-4 h-4 text-white" />} />
+                {/* <SensorCard label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" gradient="from-violet-500 to-indigo-500" bg="from-violet-50 to-indigo-50" border="border-violet-200/60" textColor="text-violet-700" icon={<Ruler className="w-4 h-4 text-white" />} /> */}
                 <SensorCard label="Vertical Distance"   value={liveData.probeDistance}    unit="mm" gradient="from-green-500 to-emerald-500" bg="from-green-50 to-emerald-50"   border="border-green-200/60"  textColor="text-green-700"  icon={<Ruler className="w-4 h-4 text-white" />} />
                 <SensorCard label="Force"               value={liveData.force}            unit="mN" gradient="from-cyan-500 to-blue-500"    bg="from-cyan-50 to-blue-50"       border="border-cyan-200/60"   textColor="text-blue-700"   icon={<Gauge className="w-4 h-4 text-white" />} />
               </div>

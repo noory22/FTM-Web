@@ -48,6 +48,7 @@ const Manual = () => {
   const [catheterBack, setCatheterBack] = useState(false);
   const [homeActive, setHomeActive] = useState(false);
   const [tareActive, setTareActive] = useState(false);
+  const [machineStatus, setMachineStatus] = useState(1); // 1=IDLE, 2=HOMING, 3=READY
 
   const [connectionStatus, setConnectionStatus] = useState({
     connected: false,
@@ -142,6 +143,14 @@ const Manual = () => {
     ],
   };
 
+  const isComponentMounted = useRef(true);
+  useEffect(() => {
+    isComponentMounted.current = true;
+    return () => {
+      isComponentMounted.current = false;
+    };
+  }, []);
+
   // Activate Manual Mode on component mount
   useEffect(() => {
     const activateManualMode = async () => {
@@ -188,10 +197,11 @@ const Manual = () => {
     setHomeActive(false);
     setTareActive(false);
     setHomingTriggered(false);
+    setMachineStatus(1);
   };
 
   const handleHome = async () => {
-    if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
+    if (!connectionStatus.connected || emergencyActive || !manualModeActive || isAtHomePosition) return;
     // Don't allow homing if already active
     if (homeActive) return;
     
@@ -443,6 +453,12 @@ const Manual = () => {
       window.api.readData()
         .then(data => {
           if (data.success) {
+            // Re-activate manual mode on PLC if it turns off while we are on this screen
+            if (data.manual === false && isComponentMounted.current) {
+              console.log("⚠️ Manual mode deactivated on PLC, re-activating...");
+              window.api.manualModeActivate().catch(e => console.error("Failed to re-activate manual mode:", e));
+            }
+
             const f = Number(data.force_mN);
             setForce(isFinite(f) ? f.toFixed(2) : '--');
 
@@ -457,6 +473,9 @@ const Manual = () => {
             if (data.probeDown !== undefined) setProbeDown(Boolean(data.probeDown));
             if (data.catheterForward !== undefined) setCatheterForward(Boolean(data.catheterForward));
             if (data.catheterBack !== undefined) setCatheterBack(Boolean(data.catheterBack));
+
+            // Track machine status (1=IDLE, 2=HOMING, 3=READY)
+            if (data.machineStatus !== undefined) setMachineStatus(data.machineStatus);
             
             // Update home state from PLC data (only if not triggered by user)
             if (!homingTriggered && data.home !== undefined) {
@@ -505,6 +524,21 @@ const Manual = () => {
   };
 
   const controlsEnabled = connectionStatus.connected && !emergencyActive && manualModeActive;
+
+  // Motors are at the home/mean position when: machine is READY and both distances are zero
+  // In this state homing is unnecessary, so the button is disabled
+  const isAtHomePosition =
+    machineStatus === 3 &&
+    Number(probeDistance) === 0 &&
+    Number(catheterDistance) === 0;
+
+  // Combined disable condition for the Homing button
+  const isHomingButtonDisabled =
+    !connectionStatus.connected ||
+    emergencyActive ||
+    !manualModeActive ||
+    homeActive ||
+    isAtHomePosition;
 
   const handleBackButton = async () => {
     try {
@@ -698,12 +732,13 @@ const Manual = () => {
                 <div className="flex flex-col items-center gap-2">
                   <button
                     onClick={handleHome}
-                    disabled={!connectionStatus.connected || emergencyActive || !manualModeActive || homeActive}
+                    disabled={isHomingButtonDisabled}
+                    title={isAtHomePosition ? 'Motors are already at home position' : ''}
                     className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
                       ${homeActive
                         ? 'bg-indigo-500 border-indigo-600 text-white shadow-lg shadow-indigo-200'
                         : 'bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-400 hover:shadow-md active:scale-95'}
-                      ${(!connectionStatus.connected || emergencyActive || !manualModeActive || homeActive) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                      ${isHomingButtonDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
                     `}
                   >
                     {homeActive && (

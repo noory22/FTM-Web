@@ -103,6 +103,15 @@ const ProcessModeThreePoint = () => {
   // ── UI ────────────────────────────────────────────────────────────────────────
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showConfigPanel, setShowConfigPanel] = useState(false);
+
+  const isComponentMounted = useRef(true);
+  useEffect(() => {
+    isComponentMounted.current = true;
+    return () => {
+      isComponentMounted.current = false;
+    };
+  }, []);
+
   const prevStatusRef = useRef("IDLE");
   const [isPaused, setIsPaused] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -222,6 +231,12 @@ const ProcessModeThreePoint = () => {
         const data = await window.api.readData();
         if (!data?.success) return;
 
+        // Re-activate 3-point mode on PLC if it turns off while we are on this screen
+        if (data.threePoint === false && isComponentMounted.current) {
+          console.log("⚠️ 3-Point mode deactivated on PLC, re-activating...");
+          window.api.threePointActivate().catch(e => console.error("Failed to re-activate 3-point mode:", e));
+        }
+
         const status = data.machineStatusDisplay || "IDLE";
         const probeDistance = data.test_Dist !== undefined && data.test_Dist !== null
           ? parseFloat(data.test_Dist)
@@ -254,6 +269,12 @@ const ProcessModeThreePoint = () => {
         }
         if (isResetting && (status === "HOMING" || status === "READY" || status === "IDLE")) {
           setIsResetting(false);
+        }
+
+        // Reset play/pause states when machine is in HOMING or READY and not transitioning
+        if ((status === "HOMING" || status === "READY") && !isStarting && !isResuming) {
+          setIsPaused(false);
+          setIsPlotting(false);
         }
 
         // ── Handle status transitions ────────────────────────────────────────

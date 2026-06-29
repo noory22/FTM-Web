@@ -1406,7 +1406,7 @@ async function processModbusLoop() {
     // 5. Yield / Wait
     // Short wait to prevent blocking event loop, but keep high poll rate
     // 20ms = ~50 polls/sec theoretical max (in practice less due to serial latency)
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise(resolve => setTimeout(resolve, 1));
   }
 }
 
