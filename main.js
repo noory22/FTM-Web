@@ -1257,9 +1257,12 @@ async function processModbusLoop() {
       // } catch (e) { 
       //   console.error('❌ TEST_DIST read error:', e.message);
       // }
+      // 
       try {
         const dRes = await client.readHoldingRegisters(REG_DISTANCE, 1);
-        plcState.distance = toSigned16(dRes.data[0]);
+        // Convert raw value (0.1mm units) to actual mm (divide by 10)
+        const rawValue = toSigned16(dRes.data[0]);
+        plcState.distance = rawValue / 10.0;  // Now in mm with 0.1mm precision
         cycleSuccess = true;
       } catch (e) { 
         console.error('❌ REG_DISTANCE read error:', e.message);
@@ -1464,8 +1467,11 @@ async function readPLCData() {
     })(),
 
     // Probe Distance — R70
+    // distance: plcState.distance,
+    // distanceDisplay: `${plcState.distance} mm`,
+    // Probe Distance — R70 (raw value / 10 for 0.1mm precision)
     distance: plcState.distance,
-    distanceDisplay: `${plcState.distance} mm`,
+    distanceDisplay: `${plcState.distance.toFixed(1)} mm`,  // Show 1 decimal place
 
     // TEST Distance — R73
     test_Dist: plcState.test_Dist,
