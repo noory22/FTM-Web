@@ -135,7 +135,6 @@ const MainMenu = () => {
         probeTravelLimit: config.probeTravelLimit,  // Maps to R6
         forceLimit: config.forceLimit,              // Maps to R7
         testSpeed: config.testSpeed,                // Maps to R8
-        supportSpan: config.supportSpan,            // Maps to R9
         horizontalSpeed: config.horizontalSpeed     // Maps to R10
       });
 
@@ -175,7 +174,6 @@ const MainMenu = () => {
           { key: 'testLength', label: 'Test Length' },
           { key: 'measurementInterval', label: 'Interval' },
           { key: 'forceLimit', label: 'Force Limit' },
-          { key: 'supportSpan', label: 'Support Span' },
         ];
       }
     };

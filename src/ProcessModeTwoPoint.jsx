@@ -642,7 +642,7 @@ const ProcessModeTwoPoint = () => {
         type: "linear",
         title: {
           display: true,
-          text: "Vertical Distance (mm)",
+          text: "Test Distance (mm)",
           color: "#6b7280",
           font: { size: 12, weight: "bold" },
         },
@@ -875,7 +875,7 @@ const ProcessModeTwoPoint = () => {
           {!isXl && (
             <div className="shrink-0 grid gap-2 grid-cols-2">
               {/* <TeleTile label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" colorClass="from-violet-500 to-indigo-500" bgClass="from-violet-50 to-indigo-50 border-violet-200/60" textClass="text-violet-700" /> */}
-              <TeleTile label="Vertical Distance"   value={liveData.probeDistance}    unit="mm" colorClass="from-green-500 to-emerald-500" bgClass="from-green-50 to-emerald-50 border-green-200/60"   textClass="text-green-700"  />
+              <TeleTile label="Test Distance"   value={liveData.probeDistance}    unit="mm" colorClass="from-green-500 to-emerald-500" bgClass="from-green-50 to-emerald-50 border-green-200/60"   textClass="text-green-700"  />
               <TeleTile label="Force"               value={liveData.force}            unit="mN" colorClass="from-cyan-500 to-blue-500"     bgClass="from-cyan-50 to-blue-50 border-cyan-200/60"       textClass="text-blue-700"   />
             </div>
           )}
@@ -885,7 +885,7 @@ const ProcessModeTwoPoint = () => {
             <div className="flex items-center justify-between mb-2 shrink-0">
               <div>
                 <span className={`${isXl ? "text-base" : "text-sm"} font-bold text-gray-900`}>
-                  Force vs Vertical Distance
+                  Force vs Test Distance
                 </span>
                 <span className="text-xs text-gray-400 ml-2">Real-time</span>
               </div>
@@ -915,7 +915,7 @@ const ProcessModeTwoPoint = () => {
               <p className="text-xs text-gray-400 mb-2">Live monitoring data</p>
               <div className="grid gap-2 grid-cols-1">
                 {/* <SensorCard label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" gradient="from-violet-500 to-indigo-500" bg="from-violet-50 to-indigo-50" border="border-violet-200/60" textColor="text-violet-700" icon={<Ruler className="w-4 h-4 text-white" />} /> */}
-                <SensorCard label="Vertical Distance"   value={liveData.probeDistance}    unit="mm" gradient="from-green-500 to-emerald-500" bg="from-green-50 to-emerald-50"   border="border-green-200/60"  textColor="text-green-700"  icon={<Ruler className="w-4 h-4 text-white" />} />
+                <SensorCard label="Test Distance"   value={liveData.probeDistance}    unit="mm" gradient="from-green-500 to-emerald-500" bg="from-green-50 to-emerald-50"   border="border-green-200/60"  textColor="text-green-700"  icon={<Ruler className="w-4 h-4 text-white" />} />
                 <SensorCard label="Force"               value={liveData.force}            unit="mN" gradient="from-cyan-500 to-blue-500"    bg="from-cyan-50 to-blue-50"       border="border-cyan-200/60"   textColor="text-blue-700"   icon={<Gauge className="w-4 h-4 text-white" />} />
               </div>
             </div>

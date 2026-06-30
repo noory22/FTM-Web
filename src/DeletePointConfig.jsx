@@ -21,8 +21,8 @@ const configMap = {
     backPath: '/test-action/3-point',
     fields: [
       { key: 'testLength', label: 'Test Length' },
+      { key: 'catheterDist', label: 'Catheter to LC Dist.' },
       { key: 'forceLimit', label: 'Force Limit' },
-      { key: 'supportSpan', label: 'Support Span' },
       { key: 'horizontalSpeed', label: 'Horizontal Speed' },
     ],
   },

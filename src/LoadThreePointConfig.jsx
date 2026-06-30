@@ -41,10 +41,10 @@ const LoadThreePointConfig = () => {
       const success = await window.api.send3PointConfig({
         testLength: selectedConfig.testLength,              // Maps to R4
         measurementInterval: selectedConfig.measurementInterval, // Maps to R5
+        catheterDist: selectedConfig.catheterDist,          // Maps to R9
         probeTravelLimit: selectedConfig.probeTravelLimit,  // Maps to R6
         forceLimit: selectedConfig.forceLimit,              // Maps to R7
         testSpeed: selectedConfig.testSpeed,                // Maps to R8
-        supportSpan: selectedConfig.supportSpan,            // Maps to R9
         horizontalSpeed: selectedConfig.horizontalSpeed     // Maps to R10
       });
 
@@ -166,6 +166,16 @@ const LoadThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Catheter to Loadcell Distance (mm)</label>
+                  <input
+                    type="text"
+                    value={selectedConfig ? selectedConfig.catheterDist : ''}
+                    readOnly
+                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 text-slate-700 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Probe Travel Limit (mm)</label>
                   <input
                     type="text"
@@ -195,15 +205,6 @@ const LoadThreePointConfig = () => {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Support Span (mm)</label>
-                  <input
-                    type="text"
-                    value={selectedConfig ? selectedConfig.supportSpan : ''}
-                    readOnly
-                    className="w-full px-4 py-3 border-2 border-slate-200 rounded-xl bg-slate-50 text-slate-700 focus:outline-none"
-                  />
-                </div>
 
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Horizontal Speed (mm/min)</label>

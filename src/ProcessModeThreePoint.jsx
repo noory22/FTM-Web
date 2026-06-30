@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Line } from "react-chartjs-2";
+import { Line, Bar } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
+  BarController,
   Title,
   Tooltip,
   Legend,
@@ -29,6 +31,8 @@ ChartJS.register(
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
+  BarController,
   Title,
   Tooltip,
   Legend,
@@ -44,6 +48,7 @@ const STATUS_META = {
   RUNNING:            { color: "text-blue-600",   dot: "bg-blue-500 animate-pulse",   badge: "bg-blue-100 text-blue-700",   pulse: true  },
   RETRACTING:         { color: "text-purple-600", dot: "bg-purple-500 animate-pulse", badge: "bg-purple-100 text-purple-700",pulse: true  },
   COMPLETED:          { color: "text-teal-600",   dot: "bg-teal-500",                 badge: "bg-teal-100 text-teal-700",   pulse: false },
+  "CATHETER MOVEMENT": { color: "text-violet-600", dot: "bg-violet-500 animate-pulse", badge: "bg-violet-100 text-violet-700", pulse: true  },
   UNKNOWN:            { color: "text-gray-400",   dot: "bg-gray-300",                 badge: "bg-gray-100 text-gray-500",   pulse: false },
 };
 
@@ -63,7 +68,7 @@ const PAUSE_ALLOWED = new Set(["SEARCHING CONTACT", "RUNNING"]);
 const RESUME_ALLOWED = new Set(["PAUSED"]);
 
 // Statuses where RESET is allowed
-const RESET_ALLOWED = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING", "COMPLETED"]);
+const RESET_ALLOWED = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING", "COMPLETED", "CATHETER MOVEMENT"]);
 
 // Statuses where graph data should be collected
 const GRAPH_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
@@ -72,7 +77,21 @@ const GRAPH_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
 const CSV_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
 
 // Statuses that indicate test in progress (block navigation)
-const TEST_IN_PROGRESS = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING"]);
+const TEST_IN_PROGRESS = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING", "CATHETER MOVEMENT"]);
+
+// ── Peak colour palette (cycles through if more than 10 steps) ──────────────────
+const PEAK_COLORS = [
+  "#3b82f6", // blue
+  "#10b981", // emerald
+  "#f59e0b", // amber
+  "#ef4444", // red
+  "#8b5cf6", // violet
+  "#ec4899", // pink
+  "#06b6d4", // cyan
+  "#84cc16", // lime
+  "#f97316", // orange
+  "#6366f1", // indigo
+];
 
 // ── 3-Point Process Mode Component ────────────────────────────────────────────
 const ProcessModeThreePoint = () => {
@@ -96,6 +115,18 @@ const ProcessModeThreePoint = () => {
   // ── Chart data (Force vs Probe Distance) ─────────────────────────────────────
   const [chartData, setChartData] = useState([]);
 
+  // ── 3-Point: Multi-peak chart state ──────────────────────────────────────────
+  const [peakSeries, setPeakSeries]           = useState([]); // Sealed completed peaks
+  const [currentPeakData, setCurrentPeakData] = useState([]); // Live cycle line
+  const [barData, setBarData]                 = useState([]); // Horizontal bar accumulation
+
+  // Refs for peak tracking (updated in-place; don't need re-render)
+  const currentPeakRef          = useRef([]);
+  const currentCycleMaxForceRef = useRef(0);
+  const currentCycleHorizPosRef = useRef(null);
+  const currentCycleStepIdxRef  = useRef(0);  // How many peaks have been sealed
+  const isTestRunningRef        = useRef(false); // True while a 3-pt test is active
+
   // ── CSV logging ───────────────────────────────────────────────────────────────
   const [isLogging, setIsLogging] = useState(false);
   const lastLogRef = useRef({ distance: null, force: null });
@@ -103,15 +134,6 @@ const ProcessModeThreePoint = () => {
   // ── UI ────────────────────────────────────────────────────────────────────────
   const [showInfoModal, setShowInfoModal] = useState(false);
   const [showConfigPanel, setShowConfigPanel] = useState(false);
-
-  const isComponentMounted = useRef(true);
-  useEffect(() => {
-    isComponentMounted.current = true;
-    return () => {
-      isComponentMounted.current = false;
-    };
-  }, []);
-
   const prevStatusRef = useRef("IDLE");
   const [isPaused, setIsPaused] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
@@ -231,12 +253,6 @@ const ProcessModeThreePoint = () => {
         const data = await window.api.readData();
         if (!data?.success) return;
 
-        // Re-activate 3-point mode on PLC if it turns off while we are on this screen
-        if (data.threePoint === false && isComponentMounted.current) {
-          console.log("⚠️ 3-Point mode deactivated on PLC, re-activating...");
-          window.api.threePointActivate().catch(e => console.error("Failed to re-activate 3-point mode:", e));
-        }
-
         const status = data.machineStatusDisplay || "IDLE";
         const probeDistance = data.test_Dist !== undefined && data.test_Dist !== null
           ? parseFloat(data.test_Dist)
@@ -271,12 +287,6 @@ const ProcessModeThreePoint = () => {
           setIsResetting(false);
         }
 
-        // Reset play/pause states when machine is in HOMING or READY and not transitioning
-        if ((status === "HOMING" || status === "READY") && !isStarting && !isResuming) {
-          setIsPaused(false);
-          setIsPlotting(false);
-        }
-
         // ── Handle status transitions ────────────────────────────────────────
 
         // Check if test completed (status changes to HOMING)
@@ -292,6 +302,35 @@ const ProcessModeThreePoint = () => {
           if (prev === "RUNNING" || prev === "SEARCHING CONTACT") {
             setIsTestCompleted(true);
           }
+        }
+
+        // ── 3-Point: Seal current peak into series on each HOMING transition ──
+        if (status === "HOMING" && (prev === "RUNNING" || prev === "SEARCHING CONTACT")) {
+          const sealedPeak = [...currentPeakRef.current];
+          if (sealedPeak.length > 0) {
+            const stepIdx  = currentCycleStepIdxRef.current;
+            const peakColor = PEAK_COLORS[stepIdx % PEAK_COLORS.length];
+            setPeakSeries(ps => [
+              ...ps,
+              { label: `Step ${stepIdx + 1}`, color: peakColor, data: sealedPeak },
+            ]);
+            setBarData(bd => [
+              ...bd,
+              {
+                label:    currentCycleHorizPosRef.current !== null
+                  ? `${parseFloat(currentCycleHorizPosRef.current.toFixed(1))}`
+                  : `S${stepIdx + 1}`,
+                maxForce: parseFloat(currentCycleMaxForceRef.current.toFixed(2)),
+                color:    peakColor,
+              },
+            ]);
+            currentCycleStepIdxRef.current += 1;
+          }
+          // Reset live-peak tracking for the next cycle
+          currentPeakRef.current          = [];
+          setCurrentPeakData([]);
+          currentCycleMaxForceRef.current = 0;
+          currentCycleHorizPosRef.current = null;
         }
 
         // When status becomes READY after HOMING, set COMPLETED briefly then READY
@@ -332,13 +371,7 @@ const ProcessModeThreePoint = () => {
           ) {
             try {
               window.api.appendCSV({
-                data: {
-                  steps: data.stepsToMove,
-                  distance_R70: data.distance,
-                  distance_R73: data.test_Dist,
-                  distance_R71: data.catheterDistance,
-                  force_mN: force
-                },
+                data: { distance: probeDistance, force_mN: force, temperature: 0 },
                 config: selectedConfig,
               });
               lastLogRef.current = { distance: probeDistance, force };
@@ -351,6 +384,28 @@ const ProcessModeThreePoint = () => {
         // ── Auto CSV: start when plotting starts ──────────────────────
         if (isPlotting && !isLogging && !isPausedUI) {
           startCsvLogging();
+        }
+
+        // ── 3-Point: Collect live peak data during contact phase ───────────────
+        if (
+          isTestRunningRef.current &&
+          !isPausedUI &&
+          probeDistance !== null &&
+          force !== null &&
+          (status === "SEARCHING CONTACT" || status === "RUNNING")
+        ) {
+          const newPoint = { x: probeDistance, y: force };
+          const lastPt   = currentPeakRef.current[currentPeakRef.current.length - 1];
+          if (!lastPt || lastPt.x !== probeDistance || lastPt.y !== force) {
+            currentPeakRef.current = [...currentPeakRef.current, newPoint];
+            setCurrentPeakData([...currentPeakRef.current]);
+            if (force > currentCycleMaxForceRef.current) {
+              currentCycleMaxForceRef.current = force;
+            }
+            if (catheterDistance !== null) {
+              currentCycleHorizPosRef.current = catheterDistance;
+            }
+          }
         }
 
       } catch (e) {
@@ -380,6 +435,7 @@ const ProcessModeThreePoint = () => {
   // ── Button handlers ───────────────────────────────────────────────────────────
   const handleStart = async () => {
     setIsStarting(true);
+    isTestRunningRef.current = true; // Mark 3-pt test as running
     setIsPlotting(true);
     try {
       const res = await window.api.start();
@@ -453,6 +509,15 @@ const ProcessModeThreePoint = () => {
           setCompletedTimer(null);
         }
         await stopCsvLogging();
+        // ── 3-Point: Clear multi-peak chart data ─────────────────────────────
+        setPeakSeries([]);
+        setCurrentPeakData([]);
+        setBarData([]);
+        currentPeakRef.current          = [];
+        currentCycleMaxForceRef.current = 0;
+        currentCycleHorizPosRef.current = null;
+        currentCycleStepIdxRef.current  = 0;
+        isTestRunningRef.current        = false;
         console.log("🔄 RESET command sent to PLC");
       } else {
         console.error("Reset failed:", res?.message);
@@ -508,45 +573,67 @@ const ProcessModeThreePoint = () => {
                    currentStatus !== "HOMING" &&
                    (currentStatus === "READY" || RESET_ALLOWED.has(currentStatus));
 
-  // ── Chart config ──────────────────────────────────────────────────────────────
-  const chartConfig = {
+  // ── 3-Point: Multi-peak line chart (Force vs Vertical Distance) ───────────────
+  const multiPeakChartConfig = {
     datasets: [
-      {
-        label: "Force (mN)",
-        data: chartData,
-        borderColor: "#3b82f6",
-        backgroundColor: "rgba(59,130,246,0.08)",
-        fill: false,
-        tension: 0,
-        pointRadius: 0,
+      // Sealed peaks from previous cycles
+      ...peakSeries.map((peak) => ({
+        label:            peak.label,
+        data:             peak.data,
+        borderColor:      peak.color,
+        backgroundColor:  peak.color + "18",
+        fill:             false,
+        tension:          0,
+        pointRadius:      0,
         pointHoverRadius: 4,
-        borderWidth: 2.5,
-      },
+        borderWidth:      2,
+      })),
+      // Live peak for the current ongoing cycle
+      ...(currentPeakData.length > 0
+        ? [{
+            label:            `Step ${peakSeries.length + 1} (Live)`,
+            data:             currentPeakData,
+            borderColor:      PEAK_COLORS[peakSeries.length % PEAK_COLORS.length],
+            backgroundColor:  "transparent",
+            fill:             false,
+            tension:          0,
+            pointRadius:      0,
+            pointHoverRadius: 4,
+            borderWidth:      2,
+            borderDash:       [5, 4],
+          }]
+        : []),
     ],
   };
 
-  const chartOptions = {
+  const multiPeakChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     animation: { duration: 0 },
     interaction: { mode: "index", intersect: false },
     plugins: {
       legend: {
-        display: true,
+        display: peakSeries.length > 0 || currentPeakData.length > 0,
         position: "top",
-        labels: { usePointStyle: true, pointStyle: "line", color: "#374151", font: { size: 12 } },
+        labels: {
+          usePointStyle: true,
+          pointStyle: "line",
+          color: "#374151",
+          font: { size: 10 },
+          boxWidth: 24,
+          padding: 8,
+        },
       },
       tooltip: {
         backgroundColor: "rgba(15,23,42,0.85)",
         titleColor: "#f1f5f9",
         bodyColor: "#cbd5e1",
-        borderColor: "#3b82f6",
         borderWidth: 1,
         cornerRadius: 8,
         padding: 10,
         callbacks: {
-          title: (ctx) => `Distance: ${ctx[0].parsed.x.toFixed(2)} mm`,
-          label: (ctx) => `Force: ${ctx.parsed.y.toFixed(2)} mN`,
+          title: (ctx) => `Vert. Dist: ${ctx[0].parsed.x.toFixed(2)} mm`,
+          label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(2)} mN`,
         },
       },
     },
@@ -557,14 +644,14 @@ const ProcessModeThreePoint = () => {
           display: true,
           text: "Vertical Distance (mm)",
           color: "#6b7280",
-          font: { size: 12, weight: "bold" },
+          font: { size: 11, weight: "bold" },
         },
         grid: { color: "rgba(229,231,235,0.5)" },
         ticks: {
           color: "#6b7280",
-          font: { size: 11 },
+          font: { size: 10 },
           maxTicksLimit: 10,
-          callback: (v) => `${v} mm`,
+          callback: (v) => `${v}mm`,
         },
       },
       y: {
@@ -573,15 +660,79 @@ const ProcessModeThreePoint = () => {
           display: true,
           text: "Force (mN)",
           color: "#6b7280",
-          font: { size: 12, weight: "bold" },
+          font: { size: 11, weight: "bold" },
         },
         grid: { color: "rgba(229,231,235,0.5)" },
         ticks: {
           color: "#6b7280",
-          font: { size: 11 },
+          font: { size: 10 },
           maxTicksLimit: 8,
-          callback: (v) => `${v} mN`,
+          callback: (v) => `${v}mN`,
         },
+      },
+    },
+  };
+
+  // ── 3-Point: Bar chart (Peak Force vs Horizontal Distance) ────────────────────
+  const barChartConfig = {
+    labels: barData.map((b) => `${b.label}mm`),
+    datasets: [
+      {
+        label:           "Peak Force (mN)",
+        data:            barData.map((b) => b.maxForce),
+        backgroundColor: barData.map((b) => b.color + "cc"),
+        borderColor:     barData.map((b) => b.color),
+        borderWidth:     1.5,
+        borderRadius:    5,
+        borderSkipped:   false,
+      },
+    ],
+  };
+
+  const barChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: "rgba(15,23,42,0.85)",
+        titleColor: "#f1f5f9",
+        bodyColor: "#cbd5e1",
+        borderWidth: 1,
+        cornerRadius: 8,
+        padding: 10,
+        callbacks: {
+          title: (ctx) => `Horiz. Dist: ${ctx[0].label}`,
+          label: (ctx) => `Peak Force: ${ctx.parsed.y.toFixed(2)} mN`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        title: {
+          display: true,
+          text: "Horizontal Distance (mm)",
+          color: "#6b7280",
+          font: { size: 11, weight: "bold" },
+        },
+        grid: { display: false },
+        ticks: { color: "#6b7280", font: { size: 10 } },
+      },
+      y: {
+        title: {
+          display: true,
+          text: "Peak Force (mN)",
+          color: "#6b7280",
+          font: { size: 11, weight: "bold" },
+        },
+        grid: { color: "rgba(229,231,235,0.5)" },
+        ticks: {
+          color: "#6b7280",
+          font: { size: 10 },
+          callback: (v) => `${v}mN`,
+        },
+        beginAtZero: true,
       },
     },
   };
@@ -733,21 +884,54 @@ const ProcessModeThreePoint = () => {
             </div>
           )}
 
-          {/* Chart */}
+          {/* ── Graph 1: Force vs Vertical Distance (multi-peak line chart) ── */}
           <div className="flex-1 bg-white/70 backdrop-blur-xl rounded-xl border border-gray-200/80 shadow-xl flex flex-col p-3 sm:p-4 min-h-0">
-            <div className="flex items-center justify-between mb-2 shrink-0">
+            <div className="flex items-center justify-between mb-1 shrink-0">
               <div>
-                <span className={`${isXl ? "text-base" : "text-sm"} font-bold text-gray-900`}>
+                <span className={`${isXl ? "text-sm" : "text-xs"} font-bold text-gray-900`}>
                   Force vs Vertical Distance
                 </span>
-                <span className="text-xs text-gray-400 ml-2">Real-time</span>
+                <span className="text-xs text-gray-400 ml-2">Multi-step peaks</span>
               </div>
-              {chartData.length > 0 && (
-                <span className="text-xs text-gray-400">{chartData.length} pts</span>
+              {peakSeries.length > 0 && (
+                <span className="text-xs text-gray-400">
+                  {peakSeries.length} step{peakSeries.length !== 1 ? "s" : ""} done
+                </span>
               )}
             </div>
-            <div className="flex-1 min-h-0" style={{ minHeight: "180px" }}>
-              <Line data={chartConfig} options={chartOptions} redraw={false} />
+            <div className="flex-1 min-h-0" style={{ minHeight: "140px" }}>
+              <Line data={multiPeakChartConfig} options={multiPeakChartOptions} redraw={false} />
+            </div>
+          </div>
+
+          {/* ── Graph 2: Force vs Horizontal Distance (bar chart) ── */}
+          <div
+            className="shrink-0 bg-white/70 backdrop-blur-xl rounded-xl border border-gray-200/80 shadow-xl flex flex-col p-3 sm:p-4"
+            style={{ height: "215px" }}
+          >
+            <div className="flex items-center justify-between mb-1 shrink-0">
+              <div>
+                <span className={`${isXl ? "text-sm" : "text-xs"} font-bold text-gray-900`}>
+                  Force vs Horizontal Distance
+                </span>
+                <span className="text-xs text-gray-400 ml-2">Peak per step</span>
+              </div>
+              {barData.length > 0 && (
+                <span className="text-xs text-gray-400">
+                  {barData.length} bar{barData.length !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+            <div className="flex-1 min-h-0">
+              {barData.length === 0 ? (
+                <div className="h-full flex items-center justify-center">
+                  <p className="text-gray-400 text-xs text-center">
+                    No steps completed yet<br />Start the test to see peak forces
+                  </p>
+                </div>
+              ) : (
+                <Bar data={barChartConfig} options={barChartOptions} />
+              )}
             </div>
           </div>
         </section>
@@ -849,10 +1033,10 @@ const ConfigDetails = ({ config, liveData }) => {
       <InfoRow label="Test Type"            value="3-Point" />
       <InfoRow label="Test Length"          value={config.testLength ? `${config.testLength} mm` : "--"} />
       <InfoRow label="Measurement Interval" value={config.measurementInterval ? `${config.measurementInterval} s` : "--"} />
+      <InfoRow label="Catheter to LC Dist." value={config.catheterDist ? `${config.catheterDist} mm` : "--"} />
       <InfoRow label="Probe Travel Limit"   value={config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--"} />
       <InfoRow label="Force Limit"          value={config.forceLimit ? `${config.forceLimit} mN` : "--"} />
       <InfoRow label="Test Speed"           value={config.testSpeed ? `${config.testSpeed} mm/min` : "--"} />
-      <InfoRow label="Support Span"         value={config.supportSpan ? `${config.supportSpan} mm` : "--"} />
       <InfoRow label="Horizontal Speed"     value={config.horizontalSpeed ? `${config.horizontalSpeed} mm/min` : "--"} />
     </div>
   );

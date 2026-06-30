@@ -8,10 +8,10 @@ const CreateThreePointConfig = () => {
     configName: '',
     testLength: '',
     measurementInterval: '',
+    catheterDist: '',
     probeTravelLimit: '',
     forceLimit: '',
     testSpeed: '',
-    supportSpan: '',
     horizontalSpeed: ''
   });
 
@@ -32,8 +32,8 @@ const CreateThreePointConfig = () => {
     }
 
     const numericFields = [
-      'testLength', 'measurementInterval', 'probeTravelLimit',
-      'forceLimit', 'testSpeed', 'supportSpan', 'horizontalSpeed'
+      'testLength', 'measurementInterval', 'catheterDist', 'probeTravelLimit',
+      'forceLimit', 'testSpeed', 'horizontalSpeed'
     ];
 
     numericFields.forEach(field => {
@@ -116,10 +116,10 @@ const CreateThreePointConfig = () => {
           configName: '',
           testLength: '',
           measurementInterval: '',
+          catheterDist: '',
           probeTravelLimit: '',
           forceLimit: '',
           testSpeed: '',
-          supportSpan: '',
           horizontalSpeed: ''
         });
       } else {
@@ -215,6 +215,19 @@ const CreateThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
+                  <label className="block text-sm font-semibold text-slate-700">Catheter to Loadcell Distance (mm)</label>
+                  <input
+                    type="text"
+                    name="catheterDist"
+                    value={formData.catheterDist}
+                    onChange={handleInputChange}
+                    placeholder="Enter Catheter to Loadcell Distance"
+                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.catheterDist ? 'border-red-300' : 'border-slate-200'}`}
+                  />
+                  {errors.catheterDist && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.catheterDist}</span></p>}
+                </div>
+
+                <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Probe Travel Limit (mm)</label>
                   <input
                     type="text"
@@ -253,18 +266,6 @@ const CreateThreePointConfig = () => {
                   {errors.testSpeed && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.testSpeed}</span></p>}
                 </div>
 
-                <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Support Span (mm)</label>
-                  <input
-                    type="text"
-                    name="supportSpan"
-                    value={formData.supportSpan}
-                    onChange={handleInputChange}
-                    placeholder="Enter Support Span"
-                    className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.supportSpan ? 'border-red-300' : 'border-slate-200'}`}
-                  />
-                  {errors.supportSpan && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.supportSpan}</span></p>}
-                </div>
 
                 <div className="space-y-2">
                   <label className="block text-sm font-semibold text-slate-700">Horizontal Speed (mm/min)</label>

@@ -573,19 +573,6 @@ const ProcessLogs = () => {
                           </p>
                         </div>
 
-                        {/* Support Span */}
-                        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl p-3 border border-emerald-200">
-                          <div className="flex items-center space-x-2 mb-1">
-                            <Ruler className="w-4 h-4 text-emerald-600" />
-                            <p className="text-slate-600 text-xs font-medium">
-                              Support Span
-                            </p>
-                          </div>
-                          <p className="text-emerald-700 font-bold">
-                            {selectedLog.configData.supportSpan || "--"} mm
-                          </p>
-                        </div>
-
                         {/* Horizontal Speed */}
                         <div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-xl p-3 border border-pink-200">
                           <div className="flex items-center space-x-2 mb-1">

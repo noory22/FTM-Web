@@ -1330,7 +1330,8 @@ async function processModbusLoop() {
       // For TEST_DIST (R73)
       try {
         const dRes = await client.readHoldingRegisters(TEST_DIST, 1);
-        plcState.test_Dist = toSigned16(dRes.data[0]);
+        const rawValue = toSigned16(dRes.data[0]);
+        plcState.test_Dist = rawValue / 10.0; // Now in mm with 0.1mm precision
         cycleSuccess = true;
       } catch (e) { 
         console.error('❌ TEST_DIST read error:', e.message);
@@ -1534,7 +1535,7 @@ async function readPLCData() {
 
     // TEST Distance — R73
     test_Dist: plcState.test_Dist,
-    test_DistDisplay: `${plcState.test_Dist} mm`,
+    test_DistDisplay: `${plcState.test_Dist.toFixed(1)} mm`,
 
     // Force — R54 (32-bit float)
     force_mN: plcState.force_mN,
@@ -1693,7 +1694,7 @@ async function ensure2PointConfig() {
 
 const THREE_POINT_DIR = path.join(app.getPath('documents'), 'FTM-3-point Test');
 const THREE_POINT_FILE = path.join(THREE_POINT_DIR, 'configs.csv');
-const THREE_POINT_HEADERS = ['configName', 'testLength', 'measurementInterval', 'probeTravelLimit', 'forceLimit', 'testSpeed', 'supportSpan', 'horizontalSpeed'];
+const THREE_POINT_HEADERS = ['configName', 'testLength', 'measurementInterval','catheterDist', 'probeTravelLimit', 'forceLimit', 'testSpeed', 'horizontalSpeed'];
 
 async function ensure3PointConfig() {
   if (!fs.existsSync(THREE_POINT_DIR)) {
@@ -2318,15 +2319,15 @@ ipcMain.handle("send-3point-config", async (event, config) => {
       // Parse configuration values
       const testLength = parseFloat(config.testLength);
       const measurementInterval = parseFloat(config.measurementInterval);
+      const catheterDist = parseFloat(config.catheterDist);
       const probeTravelLimit = parseFloat(config.probeTravelLimit);
       const forceLimit = parseFloat(config.forceLimit);
       const testSpeed = parseFloat(config.testSpeed);
-      const supportSpan = parseFloat(config.supportSpan);
       const horizontalSpeed = parseFloat(config.horizontalSpeed);
 
       // Validate values
       if (isNaN(testLength) || isNaN(measurementInterval) || isNaN(probeTravelLimit) ||
-        isNaN(forceLimit) || isNaN(testSpeed) || isNaN(supportSpan) || isNaN(horizontalSpeed)) {
+        isNaN(forceLimit) || isNaN(testSpeed) || isNaN(horizontalSpeed)) {
         console.error('❌ Invalid 3-point configuration values');
         return false;
       }
@@ -2345,6 +2346,14 @@ ipcMain.handle("send-3point-config", async (event, config) => {
       await delay(150);
       results.push({ register: '5 (R5)', value: measurementIntervalValue, success: true });
 
+
+      //4. Write the catheter to loadcell Distance
+      const catheterDistValue = Math.round(catheterDist);
+      await client.writeRegister(9, catheterDistValue);
+      await delay(150);
+      results.push({ register: '9 (R9)',value: catheterDistValue, success: true });
+      
+
       // 3. Write Probe_travel_limit to R6
       const probeTravelLimitValue = Math.round(probeTravelLimit);
       await client.writeRegister(6, probeTravelLimitValue);
@@ -2362,12 +2371,6 @@ ipcMain.handle("send-3point-config", async (event, config) => {
       await client.writeRegister(8, testSpeedValue);
       await delay(150);
       results.push({ register: '8 (R8)', value: testSpeedValue, success: true });
-
-      // 6. Write Support_span to R9
-      const supportSpanValue = Math.round(supportSpan);
-      await client.writeRegister(9, supportSpanValue);
-      await delay(150);
-      results.push({ register: '9 (R9)', value: supportSpanValue, success: true });
 
       // 7. Write Horizontal_speed to R10
       const horizontalSpeedValue = Math.round(horizontalSpeed);
