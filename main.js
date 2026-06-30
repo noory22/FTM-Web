@@ -138,6 +138,9 @@ const COIL_START = 2010;           // M10
 const COIL_STOP = 2011;            // M11
 const COIL_RESET = 2012;           // M12
 const COIL_M303 = 2303;            // M303
+const COIL_3START = 2440           // M440
+const COIL_3STOP = 2441            // M441
+const COIL_3RESET = 2442           // M442
 
 
 const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe DistanceG
@@ -152,12 +155,6 @@ const REG_SETTINGS_FORCE = 30;    // 1 register (16-bit integer) — Settings Fo
 // Helper: Convert two 16-bit Modbus registers → 32-bit float (Little-Endian word order)
 // Most Delta PLCs send floats as: word[0] = low word, word[1] = high word
 // -------------------------
-
-
-// Helper function to convert unsigned 16-bit to signed 16-bit (two's complement)
-function toSigned16(value) {
-  return value > 32767 ? value - 65536 : value;
-}
 // // Helper function declaration has been simplified
 // function registersToFloat32LE(lowWord, highWord) {
 //   const buf = new ArrayBuffer(4);
@@ -529,6 +526,8 @@ let isHardwareStopActive = false;
 // ============================
 // CSV LOGGING FUNCTIONS
 // ============================
+// CSV LOGGING FUNCTIONS
+// ============================
 
 async function startCSVLogging(config) {
   try {
@@ -869,15 +868,15 @@ function createWindow() {
 // -------------------------
 // Data conversion helpers - UPDATED BASED ON PYTHON LOGIC
 // -------------------------
-// function registersToFloat32LE(register1, register2) {
-//   const buffer = new ArrayBuffer(4);
-//   const view = new DataView(buffer);
+function registersToFloat32LE(register1, register2) {
+  const buffer = new ArrayBuffer(4);
+  const view = new DataView(buffer);
 
-//   view.setUint16(0, register1, true);
-//   view.setUint16(2, register2, true);
+  view.setUint16(0, register1, true);
+  view.setUint16(2, register2, true);
 
-//   return view.getFloat32(0, true);
-// }
+  return view.getFloat32(0, true);
+}
 
 // -------------------------
 // Safe register reading
@@ -1133,7 +1132,6 @@ async function safeReadRegisters(address, count) {
 // -------------------------
 let consecutiveErrors = 0;
 
-
 async function processModbusLoop() {
   if (isLoopRunning) return;
   isLoopRunning = true;
@@ -1309,14 +1307,6 @@ async function processModbusLoop() {
       // } catch (e) { 
       //   console.error('❌ REG_DISTANCE read error:', e.message);
       // }
-      // try {
-      //   const dRes = await client.readHoldingRegisters(TEST_DIST, 1);
-      //   plcState.test_Dist = dRes.data[0];
-      //   cycleSuccess = true;
-      // } catch (e) { 
-      //   console.error('❌ TEST_DIST read error:', e.message);
-      // }
-      // 
       try {
         const dRes = await client.readHoldingRegisters(REG_DISTANCE, 1);
         // Convert raw value (0.1mm units) to actual mm (divide by 10)
@@ -1326,18 +1316,39 @@ async function processModbusLoop() {
       } catch (e) { 
         console.error('❌ REG_DISTANCE read error:', e.message);
       }
-
-      // For TEST_DIST (R73)
       try {
         const dRes = await client.readHoldingRegisters(TEST_DIST, 1);
         const rawValue = toSigned16(dRes.data[0]);
-        plcState.test_Dist = rawValue / 10.0; // Now in mm with 0.1mm precision
+        plcState.test_Dist = rawValue / 10.0;  // Now in mm with 0.1mm precision
         cycleSuccess = true;
       } catch (e) { 
         console.error('❌ TEST_DIST read error:', e.message);
       }
 
-      
+      // try {
+      //   const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
+      //   const rawLow = fRes.data[0];
+      //   const rawHigh = fRes.data[1];
+      //   // Try both: plain 16-bit int (rawLow) and 32-bit float interpretations
+      //   const asInt16 = rawLow;                              // raw as plain integer
+      //   const asScaled = rawLow / 10.0;                      // common: value * 0.1
+      //   const floatLE = registersToFloat32LE(rawLow, rawHigh);
+      //   const floatBE = registersToFloat32BE(rawLow, rawHigh);
+      //   // Log every 5s
+      //   if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
+      //     console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}]`);
+      //     console.log(`   → as Int16:  ${asInt16} mN`);
+      //     console.log(`   → as /10:    ${asScaled} mN`);
+      //     console.log(`   → as LE f32: ${isFinite(floatLE) ? floatLE.toFixed(3) : 'NaN'} mN`);
+      //     console.log(`   → as BE f32: ${isFinite(floatBE) ? floatBE.toFixed(3) : 'NaN'} mN`);
+      //     plcState._forceLogTime = Date.now();
+      //   }
+      //   // Use raw Int16 as default — change to asScaled or floatLE if the value looks wrong
+      //   plcState.force_mN = isFinite(asInt16) ? asInt16 : 0;
+      //   cycleSuccess = true;
+      // } catch (e) {
+      //   console.error('❌ REG_FORCE read error:', e.message);
+      // }
       try {
         const fRes = await client.readHoldingRegisters(REG_FORCE, 1); // Read only 1 register
         const rawValue = fRes.data[0];
@@ -1359,31 +1370,13 @@ async function processModbusLoop() {
       }
       
 
-      // try {
-      //   const mdRes = await client.readHoldingRegisters(REG_MANUAL_DISTANCE, 1);
-      //   const rawCath = mdRes.data[0];
-      //   // Store as-is (plain integer, no conversion)
-      //   plcState.catheterDistance = rawCath;
-      //   if (Date.now() - (plcState._cathLogTime || 0) > 5000) {
-      //     console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} mm`);
-      //     plcState._cathLogTime = Date.now();
-      //   }
-      //   cycleSuccess = true;
-      // } catch (e) {
-      //   console.error('❌ REG_CATHETER(R71) read error:', e.message);
-      // }
       try {
         const mdRes = await client.readHoldingRegisters(REG_MANUAL_DISTANCE, 1);
         const rawCath = mdRes.data[0];
-        
-        // Convert from unsigned 16-bit to signed 16-bit (two's complement)
-        const signedCath = rawCath > 32767 ? rawCath - 65536 : rawCath;
-        
-        // Store the signed value
-        plcState.catheterDistance = signedCath;
-        
+        // Store as-is (plain integer, no conversion)
+        plcState.catheterDistance = rawCath;
         if (Date.now() - (plcState._cathLogTime || 0) > 5000) {
-          console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} → signed: ${signedCath} mm`);
+          console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} mm`);
           plcState._cathLogTime = Date.now();
         }
         cycleSuccess = true;
@@ -1532,6 +1525,7 @@ async function readPLCData() {
     // Probe Distance — R70 (raw value / 10 for 0.1mm precision)
     distance: plcState.distance,
     distanceDisplay: `${plcState.distance.toFixed(1)} mm`,  // Show 1 decimal place
+
 
     // TEST Distance — R73
     test_Dist: plcState.test_Dist,
@@ -1852,13 +1846,15 @@ ipcMain.handle("home", async () => {
 });
 
 
+
+// IPC handlers for Start / Stop / Reset Buttons that are used by 3-Point Process Mode 
 ipcMain.handle("start", async () => {
   return await safeExecute("START", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
 
     await client.writeCoil(COIL_STOP, false);
     await client.writeCoil(COIL_RESET, false);
-    await client.writeCoil(COIL_M303, false);
+    // await client.writeCoil(COIL_M303, false);
     await client.writeCoil(COIL_START, true);
 
     return { startInitiated: true };
@@ -1888,21 +1884,59 @@ ipcMain.handle("reset", async () => {
   });
 });
 
-ipcMain.handle("heating", async () => {
-  return { success: true };
+
+// IPC handlers for Start / Stop / Reset Buttons that are used by 3-Point Process Mode 
+
+ipcMain.handle("start-3point", async () => {
+  return await safeExecute("START_3POINT", async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+
+    await client.writeCoil(COIL_3STOP, false);
+    await client.writeCoil(COIL_3RESET, false);
+    // await client.writeCoil(COIL_M303, false);
+    await client.writeCoil(COIL_3START, true);
+
+    return { startInitiated: true };
+  });
 });
 
-ipcMain.handle("heater", async () => {
-  return { success: true };
+ipcMain.handle("stop-3point", async () => {
+  return await safeExecute("STOP_3POINT", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+
+    await client.writeCoil(COIL_3START, false);
+    await client.writeCoil(COIL_3STOP, true);
+
+    return { success: true };
+  });
+});
+ipcMain.handle("reset-3point", async () => {
+  return await safeExecute("RESET_3POINT", async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+
+    await client.writeCoil(COIL_3RESET, true);
+    await client.writeCoil(COIL_3STOP, false);
+
+    return { resetPressed: true };
+  });
 });
 
-ipcMain.handle("heater-off", async () => {
-  return { success: true };
-});
 
-ipcMain.handle("retraction", async () => {
-  return { success: true };
-});
+// ipcMain.handle("heating", async () => {
+//   return { success: true };
+// });
+
+// ipcMain.handle("heater", async () => {
+//   return { success: true };
+// });
+
+// ipcMain.handle("heater-off", async () => {
+//   return { success: true };
+// });
+
+// ipcMain.handle("retraction", async () => {
+//   return { success: true };
+// });
 
 
 // ipcMain.handle("manual", async () => {
@@ -1922,6 +1956,9 @@ ipcMain.handle("manual", async () => {
     await client.writeCoil(COIL_MANUAL, true);
     await client.writeCoil(COIL_2POINT, false);
     await client.writeCoil(COIL_3POINT, false);
+    // await client.writeCoil(COIL_RET, false);
+    // await client.writeCoil(COIL_INSERTION, false);
+    // await client.writeCoil(COIL_CLAMP, false);
     return { manualModeActivated: true };
   });
 });
@@ -2319,7 +2356,7 @@ ipcMain.handle("send-3point-config", async (event, config) => {
       // Parse configuration values
       const testLength = parseFloat(config.testLength);
       const measurementInterval = parseFloat(config.measurementInterval);
-      const catheterDist = parseFloat(config.catheterDist);
+      const catheterDist = parseFloat(config.catheterDist)
       const probeTravelLimit = parseFloat(config.probeTravelLimit);
       const forceLimit = parseFloat(config.forceLimit);
       const testSpeed = parseFloat(config.testSpeed);
@@ -2346,13 +2383,12 @@ ipcMain.handle("send-3point-config", async (event, config) => {
       await delay(150);
       results.push({ register: '5 (R5)', value: measurementIntervalValue, success: true });
 
-
       //4. Write the catheter to loadcell Distance
       const catheterDistValue = Math.round(catheterDist);
       await client.writeRegister(9, catheterDistValue);
       await delay(150);
       results.push({ register: '9 (R9)',value: catheterDistValue, success: true });
-      
+
 
       // 3. Write Probe_travel_limit to R6
       const probeTravelLimitValue = Math.round(probeTravelLimit);

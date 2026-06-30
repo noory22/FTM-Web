@@ -22,6 +22,11 @@ contextBridge.exposeInMainWorld("api", {
   stop: () => ipcRenderer.invoke("stop"),
   reset: () => ipcRenderer.invoke("reset"),
 
+      // NEW: 3-point specific handlers
+  start3Point: () => ipcRenderer.invoke("start-3point"),
+  stop3Point: () => ipcRenderer.invoke("stop-3point"),
+  reset3Point: () => ipcRenderer.invoke("reset-3point"),
+
   manual: () => ipcRenderer.invoke("manual"),
   clamp: () => ipcRenderer.invoke("clamp"),
   insertion: () => ipcRenderer.invoke("insertion"),

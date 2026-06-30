@@ -138,6 +138,9 @@ const COIL_START = 2010;           // M10
 const COIL_STOP = 2011;            // M11
 const COIL_RESET = 2012;           // M12
 const COIL_M303 = 2303;            // M303
+const COIL_3START = 2440           // M440
+const COIL_3STOP = 2441            // M441
+const COIL_3RESET = 2442           // M442
 
 
 const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe DistanceG
@@ -1843,13 +1846,15 @@ ipcMain.handle("home", async () => {
 });
 
 
+
+// IPC handlers for Start / Stop / Reset Buttons that are used by 3-Point Process Mode 
 ipcMain.handle("start", async () => {
   return await safeExecute("START", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
 
     await client.writeCoil(COIL_STOP, false);
     await client.writeCoil(COIL_RESET, false);
-    await client.writeCoil(COIL_M303, false);
+    // await client.writeCoil(COIL_M303, false);
     await client.writeCoil(COIL_START, true);
 
     return { startInitiated: true };
@@ -1879,21 +1884,60 @@ ipcMain.handle("reset", async () => {
   });
 });
 
-ipcMain.handle("heating", async () => {
-  return { success: true };
+
+// IPC handlers for Start / Stop / Reset Buttons that are used by 3-Point Process Mode 
+
+ipcMain.handle("start-3point", async () => {
+  return await safeExecute("START_3POINT", async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+
+    await client.writeCoil(COIL_3STOP, false);
+    await client.writeCoil(COIL_3RESET, false);
+    // await client.writeCoil(COIL_M303, false);
+    await client.writeCoil(COIL_3START, true);
+
+    return { startInitiated: true };
+  });
 });
 
-ipcMain.handle("heater", async () => {
-  return { success: true };
+ipcMain.handle("stop-3point", async () => {
+  return await safeExecute("STOP_3POINT", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+
+    await client.writeCoil(COIL_3START, false);
+    await client.writeCoil(COIL_3STOP, true);
+
+    return { success: true };
+  });
+});
+ipcMain.handle("reset-3point", async () => {
+  return await safeExecute("RESET_3POINT", async () => {
+    if (!isConnected) throw new Error('Modbus not connected');
+
+    await client.writeCoil(COIL_3RESET, true);
+    await client.writeCoil(COIL_3STOP, false);
+    await client.writeCoil(COIL_3START, false);
+
+    return { resetPressed: true };
+  });
 });
 
-ipcMain.handle("heater-off", async () => {
-  return { success: true };
-});
 
-ipcMain.handle("retraction", async () => {
-  return { success: true };
-});
+// ipcMain.handle("heating", async () => {
+//   return { success: true };
+// });
+
+// ipcMain.handle("heater", async () => {
+//   return { success: true };
+// });
+
+// ipcMain.handle("heater-off", async () => {
+//   return { success: true };
+// });
+
+// ipcMain.handle("retraction", async () => {
+//   return { success: true };
+// });
 
 
 // ipcMain.handle("manual", async () => {
@@ -2345,7 +2389,7 @@ ipcMain.handle("send-3point-config", async (event, config) => {
       await client.writeRegister(9, catheterDistValue);
       await delay(150);
       results.push({ register: '9 (R9)',value: catheterDistValue, success: true });
-      
+
 
       // 3. Write Probe_travel_limit to R6
       const probeTravelLimitValue = Math.round(probeTravelLimit);

@@ -438,7 +438,7 @@ const ProcessModeThreePoint = () => {
     isTestRunningRef.current = true; // Mark 3-pt test as running
     setIsPlotting(true);
     try {
-      const res = await window.api.start();
+      const res = await window.api.start3Point();
       if (res?.success) {
         setIsPaused(false);
         console.log("✅ START command sent to PLC");
@@ -458,7 +458,7 @@ const ProcessModeThreePoint = () => {
     setIsPausing(true);
     setIsPaused(true);
     try {
-      const res = await window.api.stop();
+      const res = await window.api.stop3Point();
       if (res?.success) {
         setIsPausing(false);
         console.log("⏸️ PAUSE command sent to PLC");
@@ -479,7 +479,7 @@ const ProcessModeThreePoint = () => {
     setIsPaused(false);
     setIsPausing(false);
     try {
-      const res = await window.api.start();
+      const res = await window.api.start3Point();
       if (res?.success) {
         console.log("▶️ RESUME command sent to PLC");
       } else {
@@ -497,7 +497,7 @@ const ProcessModeThreePoint = () => {
   const handleReset = async () => {
     setIsResetting(true);
     try {
-      const res = await window.api.reset();
+      const res = await window.api.reset3Point();
       if (res?.success) {
         setChartData([]);
         lastLogRef.current = { distance: null, force: null };
