@@ -1033,11 +1033,11 @@ const ConfigDetails = ({ config, liveData }) => {
       <InfoRow label="Test Type"            value="3-Point" />
       <InfoRow label="Test Length"          value={config.testLength ? `${config.testLength} mm` : "--"} />
       <InfoRow label="Measurement Interval" value={config.measurementInterval ? `${config.measurementInterval} s` : "--"} />
-      <InfoRow label="Catheter to LC Dist." value={config.catheterDist ? `${config.catheterDist} mm` : "--"} />
+      <InfoRow label="Catheter to Load Cell Distance" value={config.catheterDist ? `${config.catheterDist} mm` : "--"} />
       <InfoRow label="Probe Travel Limit"   value={config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--"} />
       <InfoRow label="Force Limit"          value={config.forceLimit ? `${config.forceLimit} mN` : "--"} />
-      <InfoRow label="Test Speed"           value={config.testSpeed ? `${config.testSpeed} mm/min` : "--"} />
-      <InfoRow label="Horizontal Speed"     value={config.horizontalSpeed ? `${config.horizontalSpeed} mm/min` : "--"} />
+      <InfoRow label="Test Speed"           value={config.testSpeed ? `${config.testSpeed} mm/s` : "--"} />
+      <InfoRow label="Horizontal Speed"     value={config.horizontalSpeed ? `${config.horizontalSpeed} mm/s` : "--"} />
     </div>
   );
 };

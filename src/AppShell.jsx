@@ -390,9 +390,9 @@ const AppShell = () => {
             </div>
 
             <nav className="flex-1 overflow-y-auto px-3 py-5">
-              {visibleGroups.map((group) => (
-                <div key={group.title} className="mb-6">
-                  {!sidebarCollapsed && (
+              {visibleGroups.map((group, idx) => (
+                <div key={group.title || idx} className="mb-6">
+                  {!sidebarCollapsed && group.title && (
                     <p className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
                       {group.title}
                     </p>

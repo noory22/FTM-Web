@@ -156,7 +156,7 @@ const LoadThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Measurement Interval (s)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Measurement Interval (mm)</label>
                   <input
                     type="text"
                     value={selectedConfig ? selectedConfig.measurementInterval : ''}
@@ -166,7 +166,7 @@ const LoadThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Catheter to Loadcell Distance (mm)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Catheter to Load Cell Distance (mm)</label>
                   <input
                     type="text"
                     value={selectedConfig ? selectedConfig.catheterDist : ''}
@@ -196,7 +196,7 @@ const LoadThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Test Speed (mm/min)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Test Speed (mm/s)</label>
                   <input
                     type="text"
                     value={selectedConfig ? selectedConfig.testSpeed : ''}
@@ -207,7 +207,7 @@ const LoadThreePointConfig = () => {
 
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Horizontal Speed (mm/min)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Horizontal Speed (mm/s)</label>
                   <input
                     type="text"
                     value={selectedConfig ? selectedConfig.horizontalSpeed : ''}

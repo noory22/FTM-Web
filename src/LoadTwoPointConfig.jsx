@@ -172,7 +172,7 @@ const LoadTwoPointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Test Speed (mm/min)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Test Speed (mm/s)</label>
                   <input
                     type="text"
                     value={selectedConfig ? selectedConfig.testSpeed : ''}

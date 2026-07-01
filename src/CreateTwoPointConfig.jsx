@@ -37,6 +37,19 @@ const CreateTwoPointConfig = () => {
       }
     });
 
+    // Distance sum validation
+    const dist = parseFloat(formData.catheterToLoadCellDistance);
+    const probe = parseFloat(formData.probeTravelLimit);
+    if (!isNaN(dist) && dist > 55) {
+      newErrors.catheterToLoadCellDistance = 'Value cannot exceed 55 mm';
+    }
+    if (!isNaN(dist) && dist > 0 && !isNaN(probe) && probe > 0) {
+      const maxProbe = Math.max(0, 55 - dist);
+      if (probe > maxProbe) {
+        newErrors.probeTravelLimit = `Value cannot exceed ${maxProbe} mm (55 − ${dist})`;
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -62,17 +75,49 @@ const CreateTwoPointConfig = () => {
       [name]: value
     }));
 
-    if (errors[name]) {
-      setErrors(prev => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
-    }
+    if (successMessage) setSuccessMessage('');
 
-    if (successMessage) {
-      setSuccessMessage('');
-    }
+    // Live cross-field distance validation
+    const newDist = name === 'catheterToLoadCellDistance' ? value : formData.catheterToLoadCellDistance;
+    const newProbe = name === 'probeTravelLimit' ? value : formData.probeTravelLimit;
+    const d = parseFloat(newDist);
+    const p = parseFloat(newProbe);
+
+    setErrors(prev => {
+      const next = { ...prev };
+
+      // Validate load cell distance upper bound
+      if (name === 'catheterToLoadCellDistance') {
+        if (!isNaN(d) && d > 55) {
+          next.catheterToLoadCellDistance = 'Value cannot exceed 55 mm';
+        } else {
+          delete next.catheterToLoadCellDistance;
+        }
+      } else if (name !== 'configName') {
+        // Clear single-field error for other numeric fields as user corrects them
+        if (next[name] && !next[name].includes('cannot exceed')) delete next[name];
+      }
+
+      // Validate probe travel limit against dynamic max
+      if (!isNaN(d) && d > 0) {
+        const maxProbe = Math.max(0, 55 - d);
+        if (!isNaN(p) && p > 0) {
+          if (p > maxProbe) {
+            next.probeTravelLimit = `Value cannot exceed ${maxProbe} mm (55 − ${d})`;
+          } else {
+            // Only clear if the current error is the dynamic-range one
+            if (next.probeTravelLimit?.includes('cannot exceed')) delete next.probeTravelLimit;
+          }
+        } else if (name === 'probeTravelLimit' && value === '') {
+          delete next.probeTravelLimit;
+        }
+      } else if (name === 'catheterToLoadCellDistance' && (isNaN(d) || d <= 0)) {
+        // Load cell cleared — clear any dynamic probe error
+        if (next.probeTravelLimit?.includes('cannot exceed')) delete next.probeTravelLimit;
+      }
+
+      return next;
+    });
   };
 
   const handleSubmit = async (e) => {
@@ -185,7 +230,7 @@ const CreateTwoPointConfig = () => {
                     name="catheterToLoadCellDistance"
                     value={formData.catheterToLoadCellDistance}
                     onChange={handleInputChange}
-                    placeholder="Enter Catheter To LoadCell Distance"
+                    placeholder="Enter Catheter To Load Cell Distance (0-55)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.catheterToLoadCellDistance ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.catheterToLoadCellDistance && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.catheterToLoadCellDistance}</span></p>}
@@ -198,9 +243,10 @@ const CreateTwoPointConfig = () => {
                     name="probeTravelLimit"
                     value={formData.probeTravelLimit}
                     onChange={handleInputChange}
-                    placeholder="Enter Probe Travel Limit"
+                    placeholder={(() => { const d = parseFloat(formData.catheterToLoadCellDistance); return (!isNaN(d) && d > 0 && d <= 55) ? `Max: ${Math.max(0, 55 - d)} mm` : 'Enter Probe Travel Limit'; })()}
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.probeTravelLimit ? 'border-red-300' : 'border-slate-200'}`}
                   />
+                  {!errors.probeTravelLimit && (() => { const d = parseFloat(formData.catheterToLoadCellDistance); return (!isNaN(d) && d > 0 && d <= 55) ? <p className="text-xs text-slate-400 mt-1">Allowed range: 0 – {Math.max(0, 55 - d)} mm</p> : null; })()}
                   {errors.probeTravelLimit && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.probeTravelLimit}</span></p>}
                 </div>
 
@@ -211,14 +257,14 @@ const CreateTwoPointConfig = () => {
                     name="forceLimit"
                     value={formData.forceLimit}
                     onChange={handleInputChange}
-                    placeholder="Enter Force Limit"
+                    placeholder="Enter Force Limit (10-25000)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.forceLimit ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.forceLimit && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.forceLimit}</span></p>}
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Test Speed (mm/min)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Test Speed (mm/s)</label>
                   <input
                     type="text"
                     name="testSpeed"
