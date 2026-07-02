@@ -148,8 +148,9 @@ const TEST_DIST = 73; // 1 register (16-bit integer) — TEST Distance that used
 const REG_FORCE = 54;     // 2 registers (32-bit float)  — Force
 const REG_MANUAL_DISTANCE = 71;   // 1 register (16-bit integer) — Catheter Distance (R71)
 const REG_MACHINE_STATUS = 11;    // 1 register (16-bit integer) — Machine Status (R11): 1=IDLE, 2=HOMING, 3=READY
-const REG_STEPS = 72;             // 1 register (16-bit integer) — No. of Steps to move (R72)
+const REG_STEPS = 451;             // 1 register (16-bit integer) — No. of Steps to move (R72)
 const REG_SETTINGS_FORCE = 30;    // 1 register (16-bit integer) — Settings Force (R30, grams)
+const REG_CATHDIST = 450;          // 1 register (16-bit integer) — Catheter Distance for 2-Point(R450)
 
 // -------------------------
 // Helper: Convert two 16-bit Modbus registers → 32-bit float (Little-Endian word order)
@@ -185,6 +186,7 @@ let plcState = {
   test_Dist: 0,        // R73  — TEST Distance (mm)
   force_mN: 0,        // R54  — Force (mN, 32-bit float)
   catheterDistance: 0,// R71  — Catheter Distance (mm)
+  catheterDistanceR450: 0, // R450 — Catheter Distance for 3-point/2-point process (mm)
   machineStatus: 1,   // R11  — Machine Status (1=IDLE, 2=HOMING, 3=READY, etc.)
   stepsToMove: 0,     // R72  — Steps to move
   coilLLS: false,
@@ -1389,6 +1391,20 @@ async function processModbusLoop() {
         console.error('❌ REG_CATHETER(R71) read error:', e.message);
       }
 
+      try {
+        const cdRes = await client.readHoldingRegisters(REG_CATHDIST, 1);
+        const rawCathDist = cdRes.data[0];
+        // Store as-is (plain integer, no conversion)
+        plcState.catheterDistanceR450 = rawCathDist;
+        if (Date.now() - (plcState._cathDistLogTime || 0) > 5000) {
+          console.log(`📊 REG_CATHDIST(R450) raw: ${rawCathDist} mm`);
+          plcState._cathDistLogTime = Date.now();
+        }
+        cycleSuccess = true;
+      } catch (e) {
+        console.error('❌ REG_CATHDIST(R450) read error:', e.message);
+      }
+
       // Read Machine Status Register R11
       try {
         const statusRes = await client.readHoldingRegisters(REG_MACHINE_STATUS, 1);
@@ -1543,6 +1559,10 @@ async function readPLCData() {
     // Catheter Distance — R71
     catheterDistance: plcState.catheterDistance,
     catheterDistanceDisplay: `${plcState.catheterDistance} mm`,
+
+    // Catheter Distance — R450
+    catheterDistanceR450: plcState.catheterDistanceR450,
+    catheterDistanceR450Display: `${plcState.catheterDistanceR450} mm`,
 
     // Steps to Move — R72
     stepsToMove: plcState.stepsToMove,

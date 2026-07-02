@@ -257,8 +257,8 @@ const ProcessModeThreePoint = () => {
         const probeDistance = data.test_Dist !== undefined && data.test_Dist !== null
           ? parseFloat(data.test_Dist)
           : null;
-        const catheterDistance = data.catheterDistance !== undefined && data.catheterDistance !== null
-          ? parseFloat(data.catheterDistance)
+        const catheterDistance = data.catheterDistanceR450 !== undefined && data.catheterDistanceR450 !== null
+          ? parseFloat(data.catheterDistanceR450)
           : null;
         const force = data.force_mN !== undefined && data.force_mN !== null
           ? parseFloat(data.force_mN)
