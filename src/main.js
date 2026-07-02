@@ -878,6 +878,11 @@ function registersToFloat32LE(register1, register2) {
   return view.getFloat32(0, true);
 }
 
+// Convert unsigned 16-bit Modbus register value to signed 16-bit integer (two's complement)
+function toSigned16(value) {
+  return value >= 0x8000 ? value - 0x10000 : value;
+}
+
 // -------------------------
 // Safe register reading
 // -------------------------
