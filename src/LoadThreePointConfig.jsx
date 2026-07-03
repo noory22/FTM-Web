@@ -156,7 +156,7 @@ const LoadThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Measurement Interval (mm)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Measurement Points (No.)</label>
                   <input
                     type="text"
                     value={selectedConfig ? selectedConfig.measurementInterval : ''}

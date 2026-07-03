@@ -46,17 +46,14 @@ const STATUS_META = {
   READY:              { color: "text-green-600",  dot: "bg-green-500",                badge: "bg-green-100 text-green-700",  pulse: false },
   "SEARCHING CONTACT":{ color: "text-sky-600",   dot: "bg-sky-500 animate-pulse",    badge: "bg-sky-100 text-sky-700",     pulse: true  },
   RUNNING:            { color: "text-blue-600",   dot: "bg-blue-500 animate-pulse",   badge: "bg-blue-100 text-blue-700",   pulse: true  },
-  RETRACTING:         { color: "text-purple-600", dot: "bg-purple-500 animate-pulse", badge: "bg-purple-100 text-purple-700",pulse: true  },
-  COMPLETED:          { color: "text-teal-600",   dot: "bg-teal-500",                 badge: "bg-teal-100 text-teal-700",   pulse: false },
   "CATHETER MOVEMENT": { color: "text-violet-600", dot: "bg-violet-500 animate-pulse", badge: "bg-violet-100 text-violet-700", pulse: true  },
-  UNKNOWN:            { color: "text-gray-400",   dot: "bg-gray-300",                 badge: "bg-gray-100 text-gray-500",   pulse: false },
 };
 
 const getStatusMeta = (status) =>
-  STATUS_META[status] || STATUS_META.UNKNOWN;
+  STATUS_META[status] || { color: "text-gray-400", dot: "bg-gray-300", badge: "bg-gray-100 text-gray-500", pulse: false };
 
 // Safe statuses where back / navigation is allowed
-const SAFE_STATUSES = new Set(["IDLE", "READY", "COMPLETED", "UNKNOWN"]);
+const SAFE_STATUSES = new Set(["IDLE", "READY"]);
 
 // Statuses where START is allowed
 const START_ALLOWED = new Set(["IDLE", "READY"]);
@@ -68,7 +65,7 @@ const PAUSE_ALLOWED = new Set(["SEARCHING CONTACT", "RUNNING"]);
 const RESUME_ALLOWED = new Set(["PAUSED"]);
 
 // Statuses where RESET is allowed
-const RESET_ALLOWED = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING", "COMPLETED", "CATHETER MOVEMENT"]);
+const RESET_ALLOWED = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "CATHETER MOVEMENT"]);
 
 // Statuses where graph data should be collected
 const GRAPH_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
@@ -77,7 +74,7 @@ const GRAPH_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
 const CSV_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
 
 // Statuses that indicate test in progress (block navigation)
-const TEST_IN_PROGRESS = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING", "CATHETER MOVEMENT"]);
+const TEST_IN_PROGRESS = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "CATHETER MOVEMENT"]);
 
 // ── Peak colour palette (cycles through if more than 10 steps) ──────────────────
 const PEAK_COLORS = [
@@ -142,8 +139,6 @@ const ProcessModeThreePoint = () => {
   const [isResetting, setIsResetting] = useState(false);
   const [isPlotting, setIsPlotting] = useState(false);
   const isPausedUI = (isPaused || isPausing) && !isResuming;
-  const [isTestCompleted, setIsTestCompleted] = useState(false);
-  const [completedTimer, setCompletedTimer] = useState(null);
 
   // ── Screen size ───────────────────────────────────────────────────────────────
   const [screenW, setScreenW] = useState(window.innerWidth);
@@ -186,7 +181,6 @@ const ProcessModeThreePoint = () => {
         }
       };
       deactivateModes();
-      if (completedTimer) clearTimeout(completedTimer);
     };
   }, []);
 
@@ -254,8 +248,8 @@ const ProcessModeThreePoint = () => {
         if (!data?.success) return;
 
         const status = data.machineStatusDisplay || "IDLE";
-        const probeDistance = data.test_Dist !== undefined && data.test_Dist !== null
-          ? parseFloat(data.test_Dist)
+        const probeDistance = data.tpTestDist !== undefined && data.tpTestDist !== null
+          ? parseFloat(data.tpTestDist)
           : null;
         const catheterDistance = data.catheterDistanceR450 !== undefined && data.catheterDistanceR450 !== null
           ? parseFloat(data.catheterDistanceR450)
@@ -298,10 +292,6 @@ const ProcessModeThreePoint = () => {
           if (isLogging) {
             stopCsvLogging();
           }
-
-          if (prev === "RUNNING" || prev === "SEARCHING CONTACT") {
-            setIsTestCompleted(true);
-          }
         }
 
         // ── 3-Point: Seal current peak into series on each HOMING transition ──
@@ -333,25 +323,7 @@ const ProcessModeThreePoint = () => {
           currentCycleHorizPosRef.current = null;
         }
 
-        // When status becomes READY after HOMING, set COMPLETED briefly then READY
-        if (prev === "HOMING" && status === "READY" && isTestCompleted) {
-          console.log("✅ Homing complete - showing COMPLETED status");
-          setLiveData(prevData => ({
-            ...prevData,
-            machineStatus: "COMPLETED"
-          }));
 
-          if (completedTimer) clearTimeout(completedTimer);
-          const timer = setTimeout(() => {
-            setLiveData(prevData => ({
-              ...prevData,
-              machineStatus: "READY"
-            }));
-            setIsTestCompleted(false);
-            setCompletedTimer(null);
-          }, 1000);
-          setCompletedTimer(timer);
-        }
 
         // ── Chart & log while plotting is active ────────────────────────────
         if (isPlotting && !isPausedUI && probeDistance !== null && force !== null) {
@@ -427,9 +399,7 @@ const ProcessModeThreePoint = () => {
     isResuming,
     isPausing,
     isResetting,
-    isPlotting,
-    isTestCompleted,
-    completedTimer
+    isPlotting
   ]);
 
   // ── Button handlers ───────────────────────────────────────────────────────────
@@ -503,11 +473,6 @@ const ProcessModeThreePoint = () => {
         lastLogRef.current = { distance: null, force: null };
         setIsPaused(false);
         setIsPlotting(false);
-        setIsTestCompleted(false);
-        if (completedTimer) {
-          clearTimeout(completedTimer);
-          setCompletedTimer(null);
-        }
         await stopCsvLogging();
         // ── 3-Point: Clear multi-peak chart data ─────────────────────────────
         setPeakSeries([]);
@@ -1032,7 +997,7 @@ const ConfigDetails = ({ config, liveData }) => {
       <InfoRow label="Config Name"          value={config.configName} highlight />
       <InfoRow label="Test Type"            value="3-Point" />
       <InfoRow label="Test Length"          value={config.testLength ? `${config.testLength} mm` : "--"} />
-      <InfoRow label="Measurement Interval" value={config.measurementInterval ? `${config.measurementInterval} s` : "--"} />
+      <InfoRow label="Measurement Points" value={config.measurementInterval ? `${config.measurementInterval} ` : "--"} />
       <InfoRow label="Catheter to Load Cell Distance" value={config.catheterDist ? `${config.catheterDist} mm` : "--"} />
       <InfoRow label="Probe Travel Limit"   value={config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--"} />
       <InfoRow label="Force Limit"          value={config.forceLimit ? `${config.forceLimit} mN` : "--"} />

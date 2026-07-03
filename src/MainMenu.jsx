@@ -132,6 +132,7 @@ const MainMenu = () => {
       const success = await window.api.send3PointConfig({
         testLength: config.testLength,              // Maps to R4
         measurementInterval: config.measurementInterval, // Maps to R5
+        catheterDist: config.catheterDist,          // Maps to R9
         probeTravelLimit: config.probeTravelLimit,  // Maps to R6
         forceLimit: config.forceLimit,              // Maps to R7
         testSpeed: config.testSpeed,                // Maps to R8

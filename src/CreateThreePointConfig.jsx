@@ -247,13 +247,13 @@ const CreateThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Measurement Interval (mm)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Measurement Points (No.)</label>
                   <input
                     type="text"
                     name="measurementInterval"
                     value={formData.measurementInterval}
                     onChange={handleInputChange}
-                    placeholder="Enter Measurement Interval (0-55)"
+                    placeholder="Enter Measurement Points (0-55)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.measurementInterval ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.measurementInterval && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.measurementInterval}</span></p>}

@@ -148,8 +148,10 @@ const TEST_DIST = 73; // 1 register (16-bit integer) — TEST Distance that used
 const REG_FORCE = 54;     // 2 registers (32-bit float)  — Force
 const REG_MANUAL_DISTANCE = 71;   // 1 register (16-bit integer) — Catheter Distance (R71)
 const REG_MACHINE_STATUS = 11;    // 1 register (16-bit integer) — Machine Status (R11): 1=IDLE, 2=HOMING, 3=READY
-const REG_STEPS = 72;             // 1 register (16-bit integer) — No. of Steps to move (R72)
+const REG_STEPS = 451;             // 1 register (16-bit integer) — No. of Steps to move (R72)
 const REG_SETTINGS_FORCE = 30;    // 1 register (16-bit integer) — Settings Force (R30, grams)
+const REG_CATHDIST = 450;          // 1 register (16-bit integer) — Catheter Distance for 2-Point(R450)
+const TP_TEST_DIST = 452;          // 1 register (16-bit integer) — Test Distance for 3-point process (R452)
 
 // -------------------------
 // Helper: Convert two 16-bit Modbus registers → 32-bit float (Little-Endian word order)
@@ -186,6 +188,7 @@ let plcState = {
   force_mN: 0,        // R54  — Force (mN, 32-bit float)
   catheterDistance: 0,// R71  — Catheter Distance (mm)
   catheterDistanceR450: 0, // R450 — Catheter Distance for 3-point/2-point process (mm)
+  tpTestDist: 0,           // R452 — Test Distance for 3-point process (mm)
   machineStatus: 1,   // R11  — Machine Status (1=IDLE, 2=HOMING, 3=READY, etc.)
   stepsToMove: 0,     // R72  — Steps to move
   coilLLS: false,
@@ -1330,31 +1333,9 @@ async function processModbusLoop() {
       } catch (e) { 
         console.error('❌ TEST_DIST read error:', e.message);
       }
+      
 
-      // try {
-      //   const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
-      //   const rawLow = fRes.data[0];
-      //   const rawHigh = fRes.data[1];
-      //   // Try both: plain 16-bit int (rawLow) and 32-bit float interpretations
-      //   const asInt16 = rawLow;                              // raw as plain integer
-      //   const asScaled = rawLow / 10.0;                      // common: value * 0.1
-      //   const floatLE = registersToFloat32LE(rawLow, rawHigh);
-      //   const floatBE = registersToFloat32BE(rawLow, rawHigh);
-      //   // Log every 5s
-      //   if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
-      //     console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}]`);
-      //     console.log(`   → as Int16:  ${asInt16} mN`);
-      //     console.log(`   → as /10:    ${asScaled} mN`);
-      //     console.log(`   → as LE f32: ${isFinite(floatLE) ? floatLE.toFixed(3) : 'NaN'} mN`);
-      //     console.log(`   → as BE f32: ${isFinite(floatBE) ? floatBE.toFixed(3) : 'NaN'} mN`);
-      //     plcState._forceLogTime = Date.now();
-      //   }
-      //   // Use raw Int16 as default — change to asScaled or floatLE if the value looks wrong
-      //   plcState.force_mN = isFinite(asInt16) ? asInt16 : 0;
-      //   cycleSuccess = true;
-      // } catch (e) {
-      //   console.error('❌ REG_FORCE read error:', e.message);
-      // }
+      
       try {
         const fRes = await client.readHoldingRegisters(REG_FORCE, 1); // Read only 1 register
         const rawValue = fRes.data[0];
@@ -1380,9 +1361,9 @@ async function processModbusLoop() {
         const mdRes = await client.readHoldingRegisters(REG_MANUAL_DISTANCE, 1);
         const rawCath = mdRes.data[0];
         // Store as-is (plain integer, no conversion)
-        plcState.catheterDistance = rawCath;
+        plcState.catheterDistance = rawCath / 10;
         if (Date.now() - (plcState._cathLogTime || 0) > 5000) {
-          console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} mm`);
+          console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} mm, converted: ${rawCath / 10} mm`);
           plcState._cathLogTime = Date.now();
         }
         cycleSuccess = true;
@@ -1390,18 +1371,41 @@ async function processModbusLoop() {
         console.error('❌ REG_CATHETER(R71) read error:', e.message);
       }
 
+      // try {
+      //   const cdRes = await client.readHoldingRegisters(REG_CATHDIST, 1);
+      //   const rawCathDist = cdRes.data[0];
+      //   // Store as-is (plain integer, no conversion)
+      //   plcState.catheterDistanceR450 = rawCathDist;
+      //   if (Date.now() - (plcState._cathDistLogTime || 0) > 5000) {
+      //     console.log(`📊 REG_CATHDIST(R450) raw: ${rawCathDist} mm`);
+      //     plcState._cathDistLogTime = Date.now();
+      //   }
+      //   cycleSuccess = true;
+      // } catch (e) {
+      //   console.error('❌ REG_CATHDIST(R450) read error:', e.message);
+      // }
       try {
         const cdRes = await client.readHoldingRegisters(REG_CATHDIST, 1);
         const rawCathDist = cdRes.data[0];
-        // Store as-is (plain integer, no conversion)
-        plcState.catheterDistanceR450 = rawCathDist;
+        // Divide by 10 and store
+        plcState.catheterDistanceR450 = rawCathDist / 10;
         if (Date.now() - (plcState._cathDistLogTime || 0) > 5000) {
-          console.log(`📊 REG_CATHDIST(R450) raw: ${rawCathDist} mm`);
+          console.log(`📊 REG_CATHDIST(R450) raw: ${rawCathDist} mm, converted: ${rawCathDist / 10} mm`);
           plcState._cathDistLogTime = Date.now();
         }
         cycleSuccess = true;
       } catch (e) {
         console.error('❌ REG_CATHDIST(R450) read error:', e.message);
+      }
+
+      // Read TP_TEST_DIST Register R452 (3-point test distance)
+      try {
+        const tpRes = await client.readHoldingRegisters(TP_TEST_DIST, 1);
+        const rawTpDist = toSigned16(tpRes.data[0]);
+        plcState.tpTestDist = rawTpDist / 10.0;  // 0.1mm precision
+        cycleSuccess = true;
+      } catch (e) {
+        console.error('❌ TP_TEST_DIST(R452) read error:', e.message);
       }
 
       // Read Machine Status Register R11
@@ -1412,14 +1416,12 @@ async function processModbusLoop() {
         if (Date.now() - (plcState._statusLogTime || 0) > 5000) {
           let statusText = '';
           switch(plcState.machineStatus) {
-            case 1: statusText = 'IDLE'; break;
             case 2: statusText = 'HOMING'; break;
             case 3: statusText = 'READY'; break;
             case 4: statusText = 'SEARCHING CONTACT'; break;
             case 5: statusText = 'RUNNING'; break;
-            case 6: statusText = 'RETRACTING'; break;
-            case 7: statusText = 'COMPLETED'; break;
-            default: statusText = 'UNKNOWN'; break;
+            case 6: statusText = 'CATHETER MOVEMENT'; break;
+            default: statusText = 'READY'; break;
           }
           console.log(`📊 Machine Status R11: ${plcState.machineStatus} (${statusText})`);
           plcState._statusLogTime = Date.now();
@@ -1528,14 +1530,12 @@ async function readPLCData() {
     machineStatus: plcState.machineStatus,
     machineStatusDisplay: (() => {
       switch (plcState.machineStatus) {
-        case 1: return 'IDLE';
         case 2: return 'HOMING';
         case 3: return 'READY';
         case 4: return 'SEARCHING CONTACT';
         case 5: return 'RUNNING';
-        case 6: return 'RETRACTING';
-        case 7: return 'COMPLETED';
-        default: return 'UNKNOWN';
+        case 6: return 'CATHETER MOVEMENT';
+        default: return 'READY';
       }
     })(),
 
@@ -1557,11 +1557,15 @@ async function readPLCData() {
 
     // Catheter Distance — R71
     catheterDistance: plcState.catheterDistance,
-    catheterDistanceDisplay: `${plcState.catheterDistance} mm`,
+    catheterDistanceDisplay: `${plcState.catheterDistance.toFixed(1)} mm`,
 
     // Catheter Distance — R450
     catheterDistanceR450: plcState.catheterDistanceR450,
-    catheterDistanceR450Display: `${plcState.catheterDistanceR450} mm`,
+    catheterDistanceR450Display: `${plcState.catheterDistanceR450.toFixed(1)} mm`,
+
+    // TP Test Distance — R452 (3-point process)
+    tpTestDist: plcState.tpTestDist,
+    tpTestDistDisplay: `${plcState.tpTestDist.toFixed(1)} mm`,
 
     // Steps to Move — R72
     stepsToMove: plcState.stepsToMove,
