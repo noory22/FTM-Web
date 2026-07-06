@@ -997,7 +997,7 @@ const ConfigDetails = ({ config, liveData }) => {
       <InfoRow label="Config Name"          value={config.configName} highlight />
       <InfoRow label="Test Type"            value="3-Point" />
       <InfoRow label="Test Length"          value={config.testLength ? `${config.testLength} mm` : "--"} />
-      <InfoRow label="Measurement Points" value={config.measurementInterval ? `${config.measurementInterval} ` : "--"} />
+      <InfoRow label="Measurement Intervals" value={config.measurementInterval ? `${config.measurementInterval} mm` : "--"} />
       <InfoRow label="Catheter to Load Cell Distance" value={config.catheterDist ? `${config.catheterDist} mm` : "--"} />
       <InfoRow label="Probe Travel Limit"   value={config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--"} />
       <InfoRow label="Force Limit"          value={config.forceLimit ? `${config.forceLimit} mN` : "--"} />

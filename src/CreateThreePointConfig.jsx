@@ -2,6 +2,23 @@ import React, { useState } from 'react';
 import { ArrowLeft, Info, AlertCircle, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
+// Helper to get integer factors of the test length that are <= 100
+const getMeasurementIntervalFactors = (num) => {
+  if (isNaN(num) || num <= 0) return [];
+  const factors = [];
+  const intNum = Math.floor(num);
+  for (let i = 1; i <= Math.sqrt(intNum); i++) {
+    if (intNum % i === 0) {
+      if (i <= 100) factors.push(i);
+      const pair = intNum / i;
+      if (pair !== i && pair <= 100) {
+        factors.push(pair);
+      }
+    }
+  }
+  return factors.sort((a, b) => a - b);
+};
+
 const CreateThreePointConfig = () => {
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
@@ -43,6 +60,32 @@ const CreateThreePointConfig = () => {
         newErrors[field] = 'Please enter a valid positive number';
       }
     });
+
+    // Test Length and Measurement Interval validation
+    const tl = parseFloat(formData.testLength);
+    const mi = parseFloat(formData.measurementInterval);
+
+    if (!isNaN(tl) && tl > 5000) {
+      newErrors.testLength = 'Value cannot exceed 5000 mm';
+    }
+
+    if (!isNaN(tl) && tl > 0) {
+      if (!isNaN(mi) && mi > 0) {
+        if (mi > 100) {
+          newErrors.measurementInterval = 'Value must be in the range (0 - 100) mm';
+        } else {
+          const ratio = tl / mi;
+          const isPerfectDivisor = Math.abs(ratio - Math.round(ratio)) < 1e-9;
+          if (!isPerfectDivisor) {
+            const factors = getMeasurementIntervalFactors(tl);
+            const factorMsg = factors.length > 0 ? `. Valid intervals: ${factors.join(', ')}` : '';
+            newErrors.measurementInterval = `Measurement interval must perfectly divide the Test Length. Range: (0 - 100)${factorMsg}`;
+          }
+        }
+      }
+    } else if (!isNaN(mi) && mi > 0) {
+      newErrors.measurementInterval = 'Please enter a valid Test Length first';
+    }
 
     // Distance sum validation
     const dist = parseFloat(formData.catheterDist);
@@ -90,6 +133,12 @@ const CreateThreePointConfig = () => {
     const d = parseFloat(newDist);
     const p = parseFloat(newProbe);
 
+    // Live test length and measurement interval validation
+    const newTestLength = name === 'testLength' ? value : formData.testLength;
+    const newInterval = name === 'measurementInterval' ? value : formData.measurementInterval;
+    const tl = parseFloat(newTestLength);
+    const mi = parseFloat(newInterval);
+
     setErrors(prev => {
       const next = { ...prev };
 
@@ -102,7 +151,13 @@ const CreateThreePointConfig = () => {
         }
       } else if (name !== 'configName') {
         // Clear single-field error for other numeric fields as user corrects them
-        if (next[name] && !next[name].includes('cannot exceed')) delete next[name];
+        if (next[name] && 
+            !next[name].includes('cannot exceed') &&
+            !next[name].includes('perfectly divide') &&
+            !next[name].includes('Range: (0 - 100)') &&
+            !next[name].includes('valid Test Length')) {
+          delete next[name];
+        }
       }
 
       // Validate probe travel limit against dynamic max
@@ -121,6 +176,48 @@ const CreateThreePointConfig = () => {
       } else if (name === 'catheterDist' && (isNaN(d) || d <= 0)) {
         // Catheter dist cleared — clear any dynamic probe error
         if (next.probeTravelLimit?.includes('cannot exceed')) delete next.probeTravelLimit;
+      }
+
+      // Validate testLength upper bound
+      if (name === 'testLength') {
+        if (!isNaN(tl) && tl > 5000) {
+          next.testLength = 'Value cannot exceed 5000 mm';
+        } else {
+          delete next.testLength;
+        }
+      }
+
+      // Validate measurementInterval against testLength
+      if (!isNaN(tl) && tl > 0) {
+        if (!isNaN(mi) && mi > 0) {
+          if (mi > 100) {
+            next.measurementInterval = 'Value must be in the range (0 - 100) mm';
+          } else {
+            const ratio = tl / mi;
+            const isPerfectDivisor = Math.abs(ratio - Math.round(ratio)) < 1e-9;
+            if (!isPerfectDivisor) {
+              const factors = getMeasurementIntervalFactors(tl);
+              const factorMsg = factors.length > 0 ? `. Valid intervals: ${factors.join(', ')}` : '';
+              next.measurementInterval = `Measurement interval must perfectly divide the Test Length. Range: (0 - 100)${factorMsg}`;
+            } else {
+              if (next.measurementInterval?.includes('perfectly divide') || next.measurementInterval?.includes('Range: (0 -') || next.measurementInterval?.includes('valid Test Length')) {
+                delete next.measurementInterval;
+              }
+            }
+          }
+        } else if (name === 'measurementInterval' && value === '') {
+          delete next.measurementInterval;
+        } else {
+          if (next.measurementInterval?.includes('perfectly divide') || next.measurementInterval?.includes('Range: (0 -') || next.measurementInterval?.includes('valid Test Length')) {
+            delete next.measurementInterval;
+          }
+        }
+      } else if (!isNaN(mi) && mi > 0) {
+        next.measurementInterval = 'Please enter a valid Test Length first';
+      } else {
+        if (next.measurementInterval?.includes('perfectly divide') || next.measurementInterval?.includes('Range: (0 -') || next.measurementInterval?.includes('valid Test Length')) {
+          delete next.measurementInterval;
+        }
       }
 
       return next;
@@ -247,13 +344,13 @@ const CreateThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Measurement Points (No.)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Measurement Intervals (mm)</label>
                   <input
                     type="text"
                     name="measurementInterval"
                     value={formData.measurementInterval}
                     onChange={handleInputChange}
-                    placeholder="Enter Measurement Points (0-55)"
+                    placeholder="Enter Measurement Intervals (0-100)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.measurementInterval ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.measurementInterval && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.measurementInterval}</span></p>}
