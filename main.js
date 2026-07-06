@@ -1,9 +1,9 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+﻿const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const { autoUpdater } = require("electron-updater");
 
 
-const ModbusRTU = require("modbus-serial");
 const { SerialPort } = require('serialport');
+const { PlcBridge } = require('./workers/plc-bridge');
 const path = require("path");
 const iconPath = path.join(__dirname, 'src/assets/icon.ico');
 const fs = require('fs');  // Changed from fs.promises to regular fs for sync operations
@@ -14,6 +14,7 @@ const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const MAIN_WINDOW_VITE_DEV_SERVER_URL = !app.isPackaged ? 'http://localhost:5173' : null;
 
 let mainWindow;
+const plcBridge = new PlcBridge();
 // ============================
 // AUTO-UPDATER CONFIGURATION
 // ============================
@@ -178,8 +179,16 @@ const TP_TEST_DIST = 452;          // 1 register (16-bit integer) — Test Dista
 // Global State
 let isConnected = false;
 let lastPulseTime = Date.now();
-const client = new ModbusRTU();
 let lastHomeState = false;
+
+let client = {
+  get isOpen() {
+    return plcBridge.isConnected;
+  },
+  close() {
+    return plcBridge.disconnect();
+  },
+};
 
 // PLC Cache & Command Queue
 let plcState = {
@@ -272,26 +281,13 @@ async function writeDeactivateModeCoils() {
 }
 
 async function applyActiveTestMode() {
-  if (!isConnected || !client.isOpen) return false;
-
+  if (!isConnected) return false;
   try {
-    switch (activeTestMode) {
-      case '2-point':
-        await writeTwoPointCoils();
-        break;
-      case '3-point':
-        await writeThreePointCoils();
-        break;
-      case 'manual':
-        await writeManualModeCoils();
-        break;
-      default:
-        return false;
-    }
-    console.log(`✅ Re-applied active test mode after connect: ${activeTestMode}`);
-    return true;
+    await plcBridge.syncActiveTestMode(activeTestMode);
+    const result = await plcBridge.applyActiveTestMode(activeTestMode);
+    return result && result.success !== false;
   } catch (error) {
-    console.error(`❌ Failed to apply active test mode (${activeTestMode}):`, error.message);
+    console.error(`Failed to apply active test mode (${activeTestMode}):`, error.message);
     return false;
   }
 }
@@ -300,9 +296,16 @@ function queueOrExecuteModeActivation(commandName, mode, writeFn) {
   activeTestMode = mode;
   if (!isConnected) {
     updatePlcModeState(mode);
-    console.log(`⏳ ${commandName}: queued until Modbus connects (mode: ${mode})`);
+    plcBridge.applyActiveTestMode(mode).catch((err) => {
+      console.error(`Failed to queue mode (${mode}):`, err.message);
+    });
+    console.log(`${commandName}: queued until Modbus connects (mode: ${mode})`);
     return Promise.resolve({ success: true, pending: true, mode });
   }
+
+  plcBridge.syncActiveTestMode(mode).catch((err) => {
+    console.error(`Failed to sync active test mode (${mode}):`, err.message);
+  });
 
   return safeExecute(commandName, async () => {
     if (!isConnected) throw new Error('Modbus not connected');
@@ -311,100 +314,42 @@ function queueOrExecuteModeActivation(commandName, mode, writeFn) {
   });
 }
 
-// Queue items: { id, type: 'write', task: async () => {}, resolve, reject }
-const commandQueue = [];
-let isLoopRunning = false;
-
 // ============================
 // CONFIGURATION FILE SETTINGS
 // ============================
 const CONFIG_FILE_PATH = path.join(app.getPath('documents'), 'CTTM.json');
 
 // -------------------------
-// Helper: Verify Heartbeat Pulses on COIL_LLS - NEW
-// -------------------------
-async function verifyPulses(clientInstance) {
-  let pulseCount = 0;
-  let lastVal = null;
-  const pollInterval = 100; // ms
-  const maxWaitTime = 10000; // 10 seconds timeout
-  const startTime = Date.now();
-
-  console.log("🔍 Verifying 3 continuous pulses (0 -> 1 transitions) on COIL_LLS (1922)...");
-
-  while (Date.now() - startTime < maxWaitTime) {
-    const res = await clientInstance.readCoils(COIL_LLS, 1);
-    const val = res.data[0] ? 1 : 0;
-
-    if (lastVal !== null) {
-      if (lastVal === 0 && val === 1) {
-        pulseCount++;
-        console.log(`📡 Pulse ${pulseCount} detected (0 -> 1)`);
-      }
-    }
-    lastVal = val;
-
-    if (pulseCount >= 3) {
-      console.log("✅ Successfully verified 3 pulses. Connection confirmed.");
-      return true;
-    }
-
-    await new Promise(resolve => setTimeout(resolve, pollInterval));
-  }
-
-  console.log(`❌ Failed to detect 3 pulses within ${maxWaitTime}ms. Found ${pulseCount} pulses.`);
-  return false;
-}
-
-// -------------------------
-// Connect Modbus - UPDATED WITH PULSE VERIFICATION
+// Connect Modbus - via PLC worker thread
 // -------------------------
 async function connectModbus(targetPort) {
   try {
-    console.log("🔌 Attempting to connect to Modbus on", targetPort);
+    console.log("Attempting to connect to Modbus on", targetPort);
 
-    // Close existing connection if any
     if (client.isOpen) {
-      client.close();
+      await plcBridge.disconnect();
     }
 
-    await client.connectRTUBuffered(targetPort, {
-      baudRate: BAUDRATE,
-      dataBits: 8,
-      stopBits: 1,
-      parity: 'Even'
-    });
+    await plcBridge.syncActiveTestMode(activeTestMode);
+    const result = await plcBridge.connect(targetPort);
 
-    client.setID(1);
-    client.setTimeout(200); // 200ms timeout for faster disconnection detection
-
-    // Verify pulses before declaring connected
-    const verified = await verifyPulses(client);
-    if (!verified) {
-      throw new Error("Could not verify 3 pulses on COIL_LLS");
+    if (result && result.success) {
+      isConnected = true;
+      lastPulseTime = Date.now();
+      PORT = result.port || targetPort;
+      console.log("Modbus connected and pulse verified on", PORT);
+      plcBridge.startUsbMonitor(PORT);
+      if (activeTestMode) {
+        updatePlcModeState(activeTestMode);
+      }
+      return true;
     }
 
-    isConnected = true;
-    lastPulseTime = Date.now(); // Reset pulse timer on successful connection
-    PORT = targetPort; // Update global
-    console.log("✅ Modbus connected and pulse verified on", PORT);
-
-    // Update UI to show connection status
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('modbus-status', 'connected');
-    }
-
-    if (activeTestMode) {
-      await applyActiveTestMode();
-    }
-
-    return true;
-  } catch (err) {
-    console.warn(`❌ Connection/verification failed on ${targetPort}:`, err.message);
     isConnected = false;
-    try {
-      if (client.isOpen) client.close();
-    } catch (e) { }
+    return false;
+  } catch (err) {
+    console.warn(`Connection/verification failed on ${targetPort}:`, err.message);
+    isConnected = false;
     return false;
   }
 }
@@ -842,6 +787,35 @@ function createWindow() {
     },
   });
 
+  plcBridge.init(() => mainWindow, {
+    onPlcState: (payload) => {
+      const {
+        isConnected: connected,
+        port,
+        lastEmerState: emer,
+        lastPowState: pow,
+        lastHomeState: home,
+        lastLLSState: lls,
+        ...state
+      } = payload;
+
+      Object.assign(plcState, state);
+      isConnected = connected;
+      if (port) PORT = port;
+      lastEmerState = emer;
+      lastPowState = pow;
+      lastHomeState = home;
+      lastLLSState = lls;
+    },
+    onConnected: (port) => {
+      isConnected = true;
+      if (port) PORT = port;
+    },
+    onDisconnected: () => {
+      isConnected = false;
+    },
+  });
+
   mainWindow.setMenu(null);
 
   // Load the renderer
@@ -887,23 +861,9 @@ function toSigned16(value) {
   return value >= 0x8000 ? value - 0x10000 : value;
 }
 
-// -------------------------
-// Safe register reading
-// -------------------------
-async function safeReadRegisters(address, count) {
-  try {
-    if (!client.isOpen) {
-      throw new Error('Modbus connection is not open');
-    }
-    return await client.readHoldingRegisters(address, count);
-  } catch (err) {
-    console.error(`Error reading register ${address}:`, err.message);
-    throw err;
-  }
-}
 
 // -------------------------
-// Background Modbus Processing Loop
+// Background Modbus Processing Loop (moved to workers/plc-data-worker.js)
 // -------------------------
 // let consecutiveErrors = 0;
 
@@ -1132,475 +1092,13 @@ async function safeReadRegisters(address, count) {
 //     // 20ms = ~50 polls/sec theoretical max (in practice less due to serial latency)
 //     await new Promise(resolve => setTimeout(resolve, 20));
 //   }
-// }
-
-// // Start the loop
-// processModbusLoop();
-// -------------------------
-// Background Modbus Processing Loop
-// -------------------------
-let consecutiveErrors = 0;
-
-async function processModbusLoop() {
-  if (isLoopRunning) return;
-  isLoopRunning = true;
-  console.log("🔄 Background Modbus Loop Started");
-
-  while (true) {
-    // 0. Critical Check: Unexpected Port Closure
-    if (isConnected && !client.isOpen) {
-      console.error("❌ Port closed unexpectedly (client.isOpen is false). Triggering disconnect.");
-      isConnected = false;
-      consecutiveErrors = 0;
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('modbus-status', 'disconnected');
-      }
-    }
-
-    // 1. Check Connection
-    if (!isConnected || !client.isOpen) {
-      // Wait before checking again
-      await new Promise(resolve => setTimeout(resolve, 500));
-      continue;
-    }
-
-    try {
-      // 2. Process High Priority Commands FIRST
-      if (commandQueue.length > 0) {
-        const cmd = commandQueue.shift();
-        console.log(`🚀 Loop: Executing command from queue: ${cmd.commandName} (remaining: ${commandQueue.length})`);
-        try {
-          const result = await cmd.task();
-          console.log(`✅ Loop: Command ${cmd.commandName} execution success!`);
-          cmd.resolve(result);
-        } catch (e) {
-          console.error(`❌ Loop: Command ${cmd.commandName} failed:`, e.message);
-          cmd.reject(e);
-        }
-        continue;
-      }
-
-      // 3. Read Data Cycle
-      let cycleSuccess = false;
-      let currentEmerState = lastEmerState;
-      let currentPowState = lastPowState;
-
-      // Read COIL_LLS (Heartbeat - X bit or M bit based on your PLC)
-      try {
-        const llsResult = await client.readCoils(COIL_LLS, 1);
-        const currentLLSState = Boolean(llsResult.data[0]);
-        plcState.coilLLS = currentLLSState;
-        cycleSuccess = true;
-        if (currentLLSState !== lastLLSState) {
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('lls-status', currentLLSState.toString());
-          }
-          lastLLSState = currentLLSState;
-          lastPulseTime = Date.now(); // Update pulse timer on transition
-        }
-      } catch (e) { 
-        console.error('❌ COIL_LLS read error:', e.message);
-      }
-
-      // Read Homing Coil M300
-      try {
-          const homeResult = await client.readCoils(COIL_HOME, 1);
-          const currentHomeState = Boolean(homeResult.data[0]);
-          plcState.home = currentHomeState;
-          cycleSuccess = true;
-          
-          // Emit homing status change
-          if (currentHomeState !== lastHomeState) {
-              if (mainWindow && !mainWindow.isDestroyed()) {
-                  mainWindow.webContents.send('home-status', currentHomeState);
-              }
-              lastHomeState = currentHomeState;
-          }
-      } catch (e) {
-          console.error('❌ COIL_HOME read error:', e.message);
-      }
-
-      // ==============================================
-      // READ M BITS (Internal Relays - Mode Selection)
-      // ==============================================
-      try {
-        const ctrlRes = await client.readCoils(COIL_MANUAL, 9);
-        plcState.manual = Boolean(ctrlRes.data[0]);          // M1 (2001)
-        plcState.manualExit = Boolean(ctrlRes.data[1]);      // M2 (2002)
-        // Note: M3-M7 are not used for mode control but kept for compatibility
-        plcState.twoPoint = Boolean(ctrlRes.data[7]);        // M8 (2008)
-        plcState.threePoint = Boolean(ctrlRes.data[8]);      // M9 (2009)
-        cycleSuccess = true;
-      } catch (e) { 
-        console.error('❌ Error reading M bits (Mode selection):', e.message);
-      }
-
-      // ==============================================
-      // READ X BITS (Physical Inputs - Sensors/Switches)
-      // ==============================================
-      try {
-        // Read X3 (Clamp sensor)
-        const clampRes = await client.readCoils(COIL_CLAMP, 1);
-        plcState.clamp = Boolean(clampRes.data[0]);
-        
-        // Read X5 (Probe Down sensor)
-        const probeDownRes = await client.readCoils(COIL_PROBE_DOWN, 1);
-        plcState.probeDown = Boolean(probeDownRes.data[0]);
-        
-        // Read X6 (Probe Up sensor)
-        const probeUpRes = await client.readCoils(COIL_PROBE_UP, 1);
-        plcState.probeUp = Boolean(probeUpRes.data[0]);
-        
-        // Read X7 (Catheter Forward sensor)
-        const cathFwdRes = await client.readCoils(COIL_CATHETER_FORWARD, 1);
-        plcState.catheterForward = Boolean(cathFwdRes.data[0]);
-        
-        // Read X8 (Catheter Back sensor)
-        const cathBackRes = await client.readCoils(COIL_CATHETER_BACK, 1);
-        plcState.catheterBack = Boolean(cathBackRes.data[0]);
-        
-        cycleSuccess = true;
-      } catch (e) { 
-        console.error('❌ Error reading X bits (Physical inputs):', e.message);
-      }
-
-      // ==============================================
-      // READ SAFETY X BITS (Emergency & Power)
-      // ==============================================
-      try {
-        const emerResult = await client.readCoils(COIL_EMER, 1);
-        currentEmerState = Boolean(emerResult.data[0]);
-        cycleSuccess = true;
-      } catch (e) { 
-        console.error('❌ COIL_EMER read error:', e.message);
-      }
-
-      try {
-        const powResult = await client.readCoils(COIL_POW, 1);
-        currentPowState = !Boolean(powResult.data[0]);  // Inverted logic for power
-        cycleSuccess = true;
-      } catch (e) { 
-        console.error('❌ COIL_POW read error:', e.message);
-      }
-
-      // Global Safety Check
-      if (currentEmerState || !currentPowState) {
-        console.log(`🚨 Loop Safety Active: emer=${currentEmerState}, pow=${currentPowState}. isHardwareStopActive=${isHardwareStopActive}`);
-        await performSafetyStop(currentEmerState ? "Emergency Pressed" : "Power OFF");
-      } else {
-        if (isHardwareStopActive) {
-          console.log(`✅ Loop Safety Cleared: emer=${currentEmerState}, pow=${currentPowState}`);
-        }
-        isHardwareStopActive = false;
-      }
-
-      // Emit Safety Updates
-      if (currentEmerState !== lastEmerState) {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('emergency-status', currentEmerState);
-        }
-        lastEmerState = currentEmerState;
-      }
-      if (currentPowState !== lastPowState) {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('power-status', currentPowState);
-        }
-        lastPowState = currentPowState;
-      }
-
-      // Read Registers
-      // try {
-      //   const dRes = await client.readHoldingRegisters(REG_DISTANCE, 1);
-      //   plcState.distance = dRes.data[0];
-      //   cycleSuccess = true;
-      // } catch (e) { 
-      //   console.error('❌ REG_DISTANCE read error:', e.message);
-      // }
-      try {
-        const dRes = await client.readHoldingRegisters(REG_DISTANCE, 1);
-        // Convert raw value (0.1mm units) to actual mm (divide by 10)
-        const rawValue = toSigned16(dRes.data[0]);
-        plcState.distance = rawValue / 10.0;  // Now in mm with 0.1mm precision
-        cycleSuccess = true;
-      } catch (e) { 
-        console.error('❌ REG_DISTANCE read error:', e.message);
-      }
-      try {
-        const dRes = await client.readHoldingRegisters(TEST_DIST, 1);
-        const rawValue = toSigned16(dRes.data[0]);
-        plcState.test_Dist = rawValue / 10.0;  // Now in mm with 0.1mm precision
-        cycleSuccess = true;
-      } catch (e) { 
-        console.error('❌ TEST_DIST read error:', e.message);
-      }
-
-      // try {
-      //   const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
-      //   const rawLow = fRes.data[0];
-      //   const rawHigh = fRes.data[1];
-      //   // Try both: plain 16-bit int (rawLow) and 32-bit float interpretations
-      //   const asInt16 = rawLow;                              // raw as plain integer
-      //   const asScaled = rawLow / 10.0;                      // common: value * 0.1
-      //   const floatLE = registersToFloat32LE(rawLow, rawHigh);
-      //   const floatBE = registersToFloat32BE(rawLow, rawHigh);
-      //   // Log every 5s
-      //   if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
-      //     console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}]`);
-      //     console.log(`   → as Int16:  ${asInt16} mN`);
-      //     console.log(`   → as /10:    ${asScaled} mN`);
-      //     console.log(`   → as LE f32: ${isFinite(floatLE) ? floatLE.toFixed(3) : 'NaN'} mN`);
-      //     console.log(`   → as BE f32: ${isFinite(floatBE) ? floatBE.toFixed(3) : 'NaN'} mN`);
-      //     plcState._forceLogTime = Date.now();
-      //   }
-      //   // Use raw Int16 as default — change to asScaled or floatLE if the value looks wrong
-      //   plcState.force_mN = isFinite(asInt16) ? asInt16 : 0;
-      //   cycleSuccess = true;
-      // } catch (e) {
-      //   console.error('❌ REG_FORCE read error:', e.message);
-      // }
-      try {
-        const fRes = await client.readHoldingRegisters(REG_FORCE, 1); // Read only 1 register
-        const rawValue = fRes.data[0];
-        
-        // Convert from unsigned 16-bit to signed 16-bit (two's complement)
-        const signedValue = rawValue > 32767 ? rawValue - 65536 : rawValue;
-        
-        // Log every 5s
-        if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
-          console.log(`📊 REG_FORCE(R54) raw: ${rawValue} → signed: ${signedValue} mN`);
-          plcState._forceLogTime = Date.now();
-        }
-        
-        // Store the signed value
-        plcState.force_mN = signedValue;
-        cycleSuccess = true;
-      } catch (e) {
-        console.error('❌ REG_FORCE read error:', e.message);
-      }
-      
-
-      try {
-        const mdRes = await client.readHoldingRegisters(REG_MANUAL_DISTANCE, 1);
-        const rawCath = mdRes.data[0];
-        // Store as-is (plain integer, no conversion)
-        plcState.catheterDistance = rawCath/10.0;
-        if (Date.now() - (plcState._cathLogTime || 0) > 5000) {
-          console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} mm,converted:${rawCath / 10}mm`);
-          plcState._cathLogTime = Date.now();
-        }
-        cycleSuccess = true;
-      } catch (e) {
-        console.error('❌ REG_CATHETER(R71) read error:', e.message);
-      }
-
-      try {
-        const cdRes = await client.readHoldingRegisters(REG_CATHDIST, 1);
-        const rawCathDist = cdRes.data[0];
-        // Divide by 10 and store
-        plcState.catheterDistanceR450 = rawCathDist / 10;
-        if (Date.now() - (plcState._cathDistLogTime || 0) > 5000) {
-          console.log(`📊 REG_CATHDIST(R450) raw: ${rawCathDist} mm, converted: ${rawCathDist / 10} mm`);
-          plcState._cathDistLogTime = Date.now();
-        }
-        cycleSuccess = true;
-      } catch (e) {
-        console.error('❌ REG_CATHDIST(R450) read error:', e.message);
-      }
-
-      // Read TP_TEST_DIST Register R452 (3-point test distance)
-      try {
-        const tpRes = await client.readHoldingRegisters(TP_TEST_DIST, 1);
-        const rawTpDist = toSigned16(tpRes.data[0]);
-        plcState.tpTestDist = rawTpDist / 10.0;  // 0.1mm precision
-        cycleSuccess = true;
-      } catch (e) {
-        console.error('❌ TP_TEST_DIST(R452) read error:', e.message);
-      }
-
-      // Read Machine Status Register R11
-      try {
-        const statusRes = await client.readHoldingRegisters(REG_MACHINE_STATUS, 1);
-        plcState.machineStatus = statusRes.data[0];
-        cycleSuccess = true;
-        if (Date.now() - (plcState._statusLogTime || 0) > 5000) {
-          let statusText = '';
-          switch(plcState.machineStatus) {
-            case 2: statusText = 'HOMING'; break;
-            case 3: statusText = 'READY'; break;
-            case 4: statusText = 'SEARCHING CONTACT'; break;
-            case 5: statusText = 'RUNNING'; break;
-            case 6: statusText = 'CATHETER MOVEMENT'; break;
-            default: statusText = 'READY'; break;
-          }
-          console.log(`📊 Machine Status R11: ${plcState.machineStatus} (${statusText})`);
-          plcState._statusLogTime = Date.now();
-        }
-      } catch (e) {
-        console.error('❌ REG_MACHINE_STATUS(R11) read error:', e.message);
-      }
-
-      // Read Steps Register R72
-      try {
-        const stepsRes = await client.readHoldingRegisters(REG_STEPS, 1);
-        plcState.stepsToMove = stepsRes.data[0];
-        cycleSuccess = true;
-      } catch (e) {
-        console.error('❌ REG_STEPS(R72) read error:', e.message);
-      }
-
-      // Read Calibration Registers R31-R33
-      try {
-        const calibRes1 = await client.readHoldingRegisters(31, 3);
-        plcState.rawForce = calibRes1.data[0];
-        plcState.weightRange = calibRes1.data[1];
-        plcState.inputsMode = calibRes1.data[2];
-        cycleSuccess = true;
-      } catch (e) {
-        console.error('❌ Calibration registers R31-R33 read error:', e.message);
-      }
-
-      // Read Calibration Register R36
-      try {
-        const calibRes2 = await client.readHoldingRegisters(36, 1);
-        plcState.realtimePlcValue = calibRes2.data[0];
-        cycleSuccess = true;
-      } catch (e) {
-        console.error('❌ Calibration register R36 read error:', e.message);
-      }
-
-      // Read Settings Force Register R30 (grams)
-      try {
-        const settingsForceRes = await client.readHoldingRegisters(REG_SETTINGS_FORCE, 1);
-        plcState.settingsForce = settingsForceRes.data[0];
-        cycleSuccess = true;
-      } catch (e) {
-        console.error('❌ Settings Force register R30 read error:', e.message);
-      }
-
-      // Heartbeat pulse check: if pulse has stopped, trigger disconnection
-      const HEARTBEAT_TIMEOUT = 4000; // 4 seconds timeout
-      if (isConnected && (Date.now() - lastPulseTime > HEARTBEAT_TIMEOUT)) {
-        console.warn(`❌ PLC heartbeat stopped (no transition detected on COIL_LLS for ${Date.now() - lastPulseTime}ms).`);
-        cycleSuccess = false;
-      }
-
-      // 4. Connection Success/Failure Tracking
-      if (cycleSuccess) {
-        consecutiveErrors = 0;
-      } else {
-        consecutiveErrors++;
-        if (consecutiveErrors >= 5) {
-          isConnected = false;
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('modbus-status', 'disconnected');
-          }
-          try { if (client.isOpen) client.close(); } catch (e) { }
-          consecutiveErrors = 0;
-        }
-      }
-
-      plcState.lastUpdated = Date.now();
-
-    } catch (loopError) {
-      console.error("⚠️ Modbus loop error:", loopError.message);
-      // Wait a bit longer on error
-      await new Promise(resolve => setTimeout(resolve, 500));
-      continue;
-    }
-
-    // 5. Yield / Wait
-    // Short wait to prevent blocking event loop, but keep high poll rate
-    // 20ms = ~50 polls/sec theoretical max (in practice less due to serial latency)
-    await new Promise(resolve => setTimeout(resolve, 1));
-  }
-}
-
-// Start the loop
-processModbusLoop();
 
 
 // -------------------------
 // Read PLC Data Function - SERVES CACHE
 // -------------------------
 async function readPLCData() {
-  if (!isConnected) {
-    return {
-      success: false,
-      message: 'Not connected to PLC'
-    };
-  }
-
-  // Return cached state immediately
-  return {
-    success: true,
-
-
-    // Machine Status — R11
-    machineStatus: plcState.machineStatus,
-    machineStatusDisplay: (() => {
-      switch (plcState.machineStatus) {
-        case 2: return 'HOMING';
-        case 3: return 'READY';
-        case 4: return 'SEARCHING CONTACT';
-        case 5: return 'RUNNING';
-        case 6: return 'CATHETER MOVEMENT';
-        default: return 'READY';
-      }
-    })(),
-
-    // Probe Distance — R70
-    // distance: plcState.distance,
-    // distanceDisplay: `${plcState.distance} mm`,
-    // Probe Distance — R70 (raw value / 10 for 0.1mm precision)
-    distance: plcState.distance,
-    distanceDisplay: `${plcState.distance.toFixed(1)} mm`,  // Show 1 decimal place
-
-
-    // TEST Distance — R73
-    test_Dist: plcState.test_Dist,
-    test_DistDisplay: `${plcState.test_Dist.toFixed(1)} mm`,
-
-    // Force — R54 (32-bit float)
-    force_mN: plcState.force_mN,
-    forceDisplay: `${plcState.force_mN.toFixed(2)} mN`,
-
-    // Catheter Distance — R71
-    catheterDistance: plcState.catheterDistance,
-    catheterDistanceDisplay: `${plcState.catheterDistance.toFixed(1)} mm`,
-
-    // Catheter Distance — R450
-    catheterDistanceR450: plcState.catheterDistanceR450,
-    catheterDistanceR450Display: `${plcState.catheterDistanceR450.toFixed(1)} mm`,
-
-    // TP Test Distance — R452 (3-point process)
-    tpTestDist: plcState.tpTestDist,
-    tpTestDistDisplay: `${plcState.tpTestDist.toFixed(1)} mm`,
-
-    // Steps to Move — R72
-    stepsToMove: plcState.stepsToMove,
-    stepsToMoveDisplay: `${plcState.stepsToMove}`,
-
-    // Calibration parameters
-    rawForce: plcState.rawForce,
-    weightRange: plcState.weightRange,
-    inputsMode: plcState.inputsMode,
-    realtimePlcValue: plcState.realtimePlcValue,
-    settingsForce: plcState.settingsForce,
-
-    // Coil states
-    coilLLS: plcState.coilLLS,
-    home: plcState.home,
-    clamp: plcState.clamp,
-    probeUp: plcState.probeUp,
-    probeDown: plcState.probeDown,
-    catheterBack: plcState.catheterBack,
-    catheterForward: plcState.catheterForward,
-    manual: plcState.manual,
-    twoPoint: plcState.twoPoint,
-    threePoint: plcState.threePoint,
-
-    rawRegisters: {}
-  };
+  return plcBridge.getReadPLCDataPayload();
 }
 
 // ============================
@@ -1812,39 +1310,48 @@ async function pulseCoil(coil) {
 // -------------------------
 // Safe command execution - QUEUED VERSION
 // -------------------------
+let _delayImpl = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = (ms) => _delayImpl(ms);
+
 function safeExecute(commandName, action) {
-  console.log(`📥 safeExecute: Requesting command: ${commandName}`);
-  return new Promise((resolve, reject) => {
-    // 1. Validate connection first (fail fast)
-    // Note: client.isOpen checks properly, isConnected is our own flag
-    // We check isConnected to keep consistent with existing logic
+  console.log(`safeExecute: Requesting command: ${commandName}`);
+  return new Promise(async (resolve, reject) => {
     if (!isConnected) {
-      console.log(`❌ ${commandName}: Modbus not connected (Rejected immediately)`);
+      console.log(`${commandName}: Modbus not connected (Rejected immediately)`);
       return resolve({
         success: false,
         message: 'Modbus not connected.',
-        error: 'NOT_CONNECTED'
+        error: 'NOT_CONNECTED',
       });
     }
 
-    // 2. Push to queue
-    console.log(`📥 safeExecute: Queueing command: ${commandName}. Current queue length: ${commandQueue.length}`);
-    commandQueue.push({
-      commandName,
-      task: async () => {
-        try {
-          console.log(`⚡ safeExecute executing task: ${commandName}`);
-          // Wrap the action to ensure it returns standard format or throws
-          const result = await action();
-          // Automatically inject success: true so frontend is happy
-          return { success: true, ...result };
-        } catch (e) {
-          throw e;
-        }
-      },
-      resolve,
-      reject
-    });
+    const ops = [];
+    const collectingClient = plcBridge.createCollectingClient(ops);
+    const prevClient = client;
+    const prevDelayImpl = _delayImpl;
+
+    client = collectingClient;
+    _delayImpl = (ms) => {
+      ops.push({ op: 'delay', ms });
+      return Promise.resolve();
+    };
+
+    try {
+      console.log(`safeExecute executing task: ${commandName}`);
+      const actionResult = await action();
+      const queueResult = await plcBridge.enqueueOps(commandName, ops);
+      if (queueResult && queueResult.success !== false) {
+        resolve({ success: true, ...(actionResult || {}) });
+      } else {
+        resolve(queueResult || { success: false, message: 'Command failed' });
+      }
+    } catch (e) {
+      console.error(`safeExecute ${commandName} failed:`, e.message);
+      reject(e);
+    } finally {
+      client = prevClient;
+      _delayImpl = (ms) => new Promise((r) => setTimeout(r, ms));
+    }
   });
 }
 
@@ -2009,8 +1516,12 @@ ipcMain.handle("manual-mode-deactivate", async () => {
   activeTestMode = null;
   if (!isConnected) {
     updatePlcModeState(null);
+    plcBridge.applyActiveTestMode(null).catch((err) => {
+      console.error('Failed to queue manual mode deactivation:', err.message);
+    });
     return { success: true, pending: true };
   }
+  plcBridge.syncActiveTestMode(null).catch(() => {});
   return await safeExecute("MANUAL-MODE-DEACTIVATE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await writeDeactivateModeCoils();
@@ -2033,8 +1544,12 @@ ipcMain.handle("deactivate-manual", async () => {
   activeTestMode = null;
   if (!isConnected) {
     updatePlcModeState(null);
+    plcBridge.applyActiveTestMode(null).catch((err) => {
+      console.error('Failed to queue deactivate-manual:', err.message);
+    });
     return { success: true, pending: true };
   }
+  plcBridge.syncActiveTestMode(null).catch(() => {});
   return await safeExecute("DEACTIVATE-MANUAL", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await writeDeactivateModeCoils();
@@ -2046,8 +1561,12 @@ ipcMain.handle("disable-manual-mode", async () => {
   activeTestMode = null;
   if (!isConnected) {
     updatePlcModeState(null);
+    plcBridge.applyActiveTestMode(null).catch((err) => {
+      console.error('Failed to queue disable-manual-mode:', err.message);
+    });
     return { manualModeDisabled: true, pending: true };
   }
+  plcBridge.syncActiveTestMode(null).catch(() => {});
   return await safeExecute("DISABLE-MANUAL-MODE", async () => {
     if (!isConnected) throw new Error('Modbus not connected');
     await writeDeactivateModeCoils();
@@ -2075,7 +1594,7 @@ ipcMain.handle("tare", async () => {
   return await safeExecute("TARE", async () => {
     if (!isConnected) throw new Error("Modbus not connected");
     await client.writeCoil(COIL_TARE, true);
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await delay(1000);
     await client.writeCoil(COIL_TARE, false);
     return { success: true };
   });
@@ -2142,16 +1661,9 @@ ipcMain.handle("reconnect", async () => {
   try {
     console.log("Attempting to reconnect...");
 
-    if (client.isOpen) {
-      client.close();
-      console.log("Closed existing connection");
-    }
-
+    plcBridge.stopUsbMonitor();
+    await plcBridge.disconnect();
     isConnected = false;
-
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('modbus-status', 'disconnected');
-    }
 
     const connected = await manualConnectModbus();
 
@@ -2196,7 +1708,6 @@ ipcMain.handle("delete-config-file", async (event, configName) => {
     return false;
   }
 });
-const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 // ipcMain.handle("send-process-mode", async (event, config) => {
 //   return await safeExecute("SEND_PROCESS_CONFIG", async () => {
 //     try {
@@ -2548,10 +2059,7 @@ app.whenReady().then(() => {
 
 // Close port when app quits
 app.on('window-all-closed', () => {
-  if (client.isOpen) {
-    console.log("Closing Modbus connection...");
-    client.close();
-  }
+  plcBridge.terminate();
 
   if (process.platform !== 'darwin') {
     app.quit();

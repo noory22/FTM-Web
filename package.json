@@ -62,6 +62,7 @@
     "files": [
       "main.js",
       "preload.js",
+      "workers/**/*",
       ".vite/**/*",
       ".vite/build/**/*",
       "src/**/*",

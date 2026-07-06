@@ -454,7 +454,7 @@ const Manual = () => {
         .then(data => {
           if (data.success) {
             // Re-activate manual mode on PLC if it turns off while we are on this screen
-            if (data.manual === false && isComponentMounted.current) {
+            if (data.manual === false && manualModeActive && isComponentMounted.current) {
               console.log("⚠️ Manual mode deactivated on PLC, re-activating...");
               window.api.manualModeActivate().catch(e => console.error("Failed to re-activate manual mode:", e));
             }

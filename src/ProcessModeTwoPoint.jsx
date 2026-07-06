@@ -96,6 +96,7 @@ const ProcessModeTwoPoint = () => {
 
   // ── Chart data (Force vs Probe Distance) ─────────────────────────────────────
   const [chartData, setChartData] = useState([]);
+  const [twoPointModeActive, setTwoPointModeActive] = useState(false);
 
   // ── CSV logging ───────────────────────────────────────────────────────────────
   const [isLogging, setIsLogging] = useState(false);
@@ -170,8 +171,11 @@ const ProcessModeTwoPoint = () => {
           setSelectedConfig(config);
 
           // Always activate 2-point mode on PLC
-          await window.api.twoPointActivate();
-          console.log("✅ 2-POINT mode activated on PLC");
+          const res = await window.api.twoPointActivate();
+          if (res && res.success) {
+            setTwoPointModeActive(true);
+            console.log("✅ 2-POINT mode activated on PLC");
+          }
         }
       } catch (e) {
         console.error("Error loading config from localStorage:", e);
@@ -259,7 +263,7 @@ const ProcessModeTwoPoint = () => {
         if (!data?.success) return;
 
         // Re-activate 2-point mode on PLC if it turns off while we are on this screen
-        if (data.twoPoint === false && isComponentMounted.current) {
+        if (data.twoPoint === false && twoPointModeActive && isComponentMounted.current) {
           console.log("⚠️ 2-Point mode deactivated on PLC, re-activating...");
           window.api.twoPointActivate().catch(e => console.error("Failed to re-activate 2-point mode:", e));
         }
