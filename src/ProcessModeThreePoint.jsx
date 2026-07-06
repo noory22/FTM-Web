@@ -90,6 +90,28 @@ const PEAK_COLORS = [
   "#6366f1", // indigo
 ];
 
+const CONTACT_PHASE = new Set(["SEARCHING CONTACT", "RUNNING"]);
+const SEAL_TARGET_STATUS = new Set(["HOMING", "CATHETER MOVEMENT"]);
+
+// Pre-compute bar slots from config: one slot per measurement interval step
+function computeThreePointBarSlots(config) {
+  if (!config) return [];
+  const testLength = parseFloat(config.testLength);
+  const interval = parseFloat(config.measurementInterval);
+  if (!Number.isFinite(testLength) || !Number.isFinite(interval) || interval <= 0) {
+    return [];
+  }
+  const numSteps = Math.round(testLength / interval);
+  if (numSteps <= 0) return [];
+
+  return Array.from({ length: numSteps }, (_, i) => ({
+    stepIndex: i,
+    horizontalMm: (i + 1) * interval,
+    maxForce: null,
+    color: PEAK_COLORS[i % PEAK_COLORS.length],
+  }));
+}
+
 // ── 3-Point Process Mode Component ────────────────────────────────────────────
 const ProcessModeThreePoint = () => {
   const navigate = useNavigate();
@@ -115,7 +137,7 @@ const ProcessModeThreePoint = () => {
   // ── 3-Point: Multi-peak chart state ──────────────────────────────────────────
   const [peakSeries, setPeakSeries]           = useState([]); // Sealed completed peaks
   const [currentPeakData, setCurrentPeakData] = useState([]); // Live cycle line
-  const [barData, setBarData]                 = useState([]); // Horizontal bar accumulation
+  const [barSlots, setBarSlots]               = useState([]); // Peak force per measurement interval
 
   // Refs for peak tracking (updated in-place; don't need re-render)
   const currentPeakRef          = useRef([]);
@@ -123,6 +145,13 @@ const ProcessModeThreePoint = () => {
   const currentCycleHorizPosRef = useRef(null);
   const currentCycleStepIdxRef  = useRef(0);  // How many peaks have been sealed
   const isTestRunningRef        = useRef(false); // True while a 3-pt test is active
+
+  const resetCycleTracking = useCallback(() => {
+    currentPeakRef.current = [];
+    setCurrentPeakData([]);
+    currentCycleMaxForceRef.current = 0;
+    currentCycleHorizPosRef.current = null;
+  }, []);
 
   // ── CSV logging ───────────────────────────────────────────────────────────────
   const [isLogging, setIsLogging] = useState(false);
@@ -138,6 +167,7 @@ const ProcessModeThreePoint = () => {
   const [isPausing, setIsPausing] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [isPlotting, setIsPlotting] = useState(false);
+  const [isTestActive, setIsTestActive] = useState(false);
   const isPausedUI = (isPaused || isPausing) && !isResuming;
 
   // ── Screen size ───────────────────────────────────────────────────────────────
@@ -283,44 +313,70 @@ const ProcessModeThreePoint = () => {
 
         // ── Handle status transitions ────────────────────────────────────────
 
-        // Check if test completed (status changes to HOMING)
-        if (status === "HOMING") {
+        // Test fully completed: homing finished and machine is idle/ready again
+        if (
+          isTestRunningRef.current &&
+          !isPaused &&
+          (status === "READY" || status === "IDLE") &&
+          prev === "HOMING"
+        ) {
+          isTestRunningRef.current = false;
+          setIsTestActive(false);
           setIsPlotting(false);
           setChartData([]);
           lastLogRef.current = { distance: null, force: null };
-
           if (isLogging) {
             stopCsvLogging();
           }
         }
 
-        // ── 3-Point: Seal current peak into series on each HOMING transition ──
-        if (status === "HOMING" && (prev === "RUNNING" || prev === "SEARCHING CONTACT")) {
+        // ── 3-Point: Seal peak + bar when leaving contact phase ───────────────
+        const leavingContact =
+          CONTACT_PHASE.has(prev) && SEAL_TARGET_STATUS.has(status);
+
+        if (leavingContact) {
           const sealedPeak = [...currentPeakRef.current];
-          if (sealedPeak.length > 0) {
-            const stepIdx  = currentCycleStepIdxRef.current;
+          const maxForce = currentCycleMaxForceRef.current;
+          if (sealedPeak.length > 0 || maxForce > 0) {
+            const stepIdx = currentCycleStepIdxRef.current;
             const peakColor = PEAK_COLORS[stepIdx % PEAK_COLORS.length];
-            setPeakSeries(ps => [
-              ...ps,
-              { label: `Step ${stepIdx + 1}`, color: peakColor, data: sealedPeak },
-            ]);
-            setBarData(bd => [
-              ...bd,
-              {
-                label:    currentCycleHorizPosRef.current !== null
-                  ? `${parseFloat(currentCycleHorizPosRef.current.toFixed(1))}`
-                  : `S${stepIdx + 1}`,
-                maxForce: parseFloat(currentCycleMaxForceRef.current.toFixed(2)),
-                color:    peakColor,
-              },
-            ]);
+            const maxForceRounded = parseFloat(maxForce.toFixed(2));
+
+            if (sealedPeak.length > 0) {
+              setPeakSeries((ps) => [
+                ...ps,
+                { label: `Step ${stepIdx + 1}`, color: peakColor, data: sealedPeak },
+              ]);
+            }
+
+            setBarSlots((slots) => {
+              const next = [...slots];
+              const horizontalMm =
+                next[stepIdx]?.horizontalMm ??
+                (currentCycleHorizPosRef.current !== null
+                  ? parseFloat(currentCycleHorizPosRef.current.toFixed(1))
+                  : null);
+
+              if (next[stepIdx]) {
+                next[stepIdx] = {
+                  ...next[stepIdx],
+                  maxForce: maxForceRounded,
+                  color: peakColor,
+                };
+              } else if (horizontalMm !== null) {
+                next.push({
+                  stepIndex: stepIdx,
+                  horizontalMm,
+                  maxForce: maxForceRounded,
+                  color: peakColor,
+                });
+              }
+              return next;
+            });
+
             currentCycleStepIdxRef.current += 1;
           }
-          // Reset live-peak tracking for the next cycle
-          currentPeakRef.current          = [];
-          setCurrentPeakData([]);
-          currentCycleMaxForceRef.current = 0;
-          currentCycleHorizPosRef.current = null;
+          resetCycleTracking();
         }
 
 
@@ -399,14 +455,21 @@ const ProcessModeThreePoint = () => {
     isResuming,
     isPausing,
     isResetting,
-    isPlotting
+    isPlotting,
+    isPaused,
+    resetCycleTracking,
   ]);
 
   // ── Button handlers ───────────────────────────────────────────────────────────
   const handleStart = async () => {
     setIsStarting(true);
-    isTestRunningRef.current = true; // Mark 3-pt test as running
+    isTestRunningRef.current = true;
+    setIsTestActive(true);
     setIsPlotting(true);
+    setPeakSeries([]);
+    setBarSlots(computeThreePointBarSlots(selectedConfig));
+    currentCycleStepIdxRef.current = 0;
+    resetCycleTracking();
     try {
       const res = await window.api.start3Point();
       if (res?.success) {
@@ -416,11 +479,15 @@ const ProcessModeThreePoint = () => {
         console.error("Start failed:", res?.message);
         setIsStarting(false);
         setIsPlotting(false);
+        setIsTestActive(false);
+        isTestRunningRef.current = false;
       }
     } catch (e) {
       console.error("Start error:", e);
       setIsStarting(false);
       setIsPlotting(false);
+      setIsTestActive(false);
+      isTestRunningRef.current = false;
     }
   };
 
@@ -451,6 +518,7 @@ const ProcessModeThreePoint = () => {
     try {
       const res = await window.api.start3Point();
       if (res?.success) {
+        setIsPlotting(true);
         console.log("▶️ RESUME command sent to PLC");
       } else {
         console.error("Resume failed:", res?.message);
@@ -473,16 +541,14 @@ const ProcessModeThreePoint = () => {
         lastLogRef.current = { distance: null, force: null };
         setIsPaused(false);
         setIsPlotting(false);
+        setIsTestActive(false);
         await stopCsvLogging();
         // ── 3-Point: Clear multi-peak chart data ─────────────────────────────
         setPeakSeries([]);
-        setCurrentPeakData([]);
-        setBarData([]);
-        currentPeakRef.current          = [];
-        currentCycleMaxForceRef.current = 0;
-        currentCycleHorizPosRef.current = null;
+        setBarSlots([]);
         currentCycleStepIdxRef.current  = 0;
         isTestRunningRef.current        = false;
+        resetCycleTracking();
         console.log("🔄 RESET command sent to PLC");
       } else {
         console.error("Reset failed:", res?.message);
@@ -503,22 +569,24 @@ const ProcessModeThreePoint = () => {
                    !isResetting &&
                    !isResuming &&
                    !isPausedUI &&
+                   !isTestActive &&
                    currentStatus === "READY";
 
   const canPause = isConnected &&
-                   isPlotting &&
+                   isTestActive &&
                    !isPausedUI &&
                    !isPausing &&
                    !isResetting;
 
   const canResume = isConnected &&
-                    !isResetting &&
+                    isTestActive &&
+                    isPausedUI &&
                     !isResuming &&
-                    isPausedUI;
+                    !isResetting;
 
   const playPauseMode = isPausedUI
     ? 'resume'
-    : (isPlotting || TEST_IN_PROGRESS.has(currentStatus))
+    : isTestActive
       ? 'pause'
       : 'start';
 
@@ -537,6 +605,14 @@ const ProcessModeThreePoint = () => {
                    !isResetting &&
                    currentStatus !== "HOMING" &&
                    (currentStatus === "READY" || RESET_ALLOWED.has(currentStatus));
+
+  const completedBars = barSlots.filter((s) => s.maxForce !== null);
+  const testLengthMax = selectedConfig
+    ? parseFloat(selectedConfig.testLength) || undefined
+    : undefined;
+  const liveStepColor =
+    barSlots[peakSeries.length]?.color ??
+    PEAK_COLORS[peakSeries.length % PEAK_COLORS.length];
 
   // ── 3-Point: Multi-peak line chart (Force vs Vertical Distance) ───────────────
   const multiPeakChartConfig = {
@@ -558,7 +634,7 @@ const ProcessModeThreePoint = () => {
         ? [{
             label:            `Step ${peakSeries.length + 1} (Live)`,
             data:             currentPeakData,
-            borderColor:      PEAK_COLORS[peakSeries.length % PEAK_COLORS.length],
+            borderColor:      liveStepColor,
             backgroundColor:  "transparent",
             fill:             false,
             tension:          0,
@@ -640,16 +716,17 @@ const ProcessModeThreePoint = () => {
 
   // ── 3-Point: Bar chart (Peak Force vs Horizontal Distance) ────────────────────
   const barChartConfig = {
-    labels: barData.map((b) => `${b.label}mm`),
     datasets: [
       {
         label:           "Peak Force (mN)",
-        data:            barData.map((b) => b.maxForce),
-        backgroundColor: barData.map((b) => b.color + "cc"),
-        borderColor:     barData.map((b) => b.color),
+        data:            completedBars.map((s) => ({ x: s.horizontalMm, y: s.maxForce })),
+        backgroundColor: completedBars.map((s) => s.color + "cc"),
+        borderColor:     completedBars.map((s) => s.color),
         borderWidth:     1.5,
         borderRadius:    5,
         borderSkipped:   false,
+        barPercentage:   0.85,
+        categoryPercentage: 0.9,
       },
     ],
   };
@@ -658,6 +735,10 @@ const ProcessModeThreePoint = () => {
     responsive: true,
     maintainAspectRatio: false,
     animation: { duration: 300 },
+    parsing: {
+      xAxisKey: "x",
+      yAxisKey: "y",
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -668,21 +749,29 @@ const ProcessModeThreePoint = () => {
         cornerRadius: 8,
         padding: 10,
         callbacks: {
-          title: (ctx) => `Horiz. Dist: ${ctx[0].label}`,
+          title: (ctx) => `Horiz. Dist: ${ctx[0].parsed.x.toFixed(1)} mm`,
           label: (ctx) => `Peak Force: ${ctx.parsed.y.toFixed(2)} mN`,
         },
       },
     },
     scales: {
       x: {
+        type: "linear",
+        min: 0,
+        max: testLengthMax,
         title: {
           display: true,
           text: "Horizontal Distance (mm)",
           color: "#6b7280",
           font: { size: 11, weight: "bold" },
         },
-        grid: { display: false },
-        ticks: { color: "#6b7280", font: { size: 10 } },
+        grid: { color: "rgba(229,231,235,0.4)" },
+        ticks: {
+          color: "#6b7280",
+          font: { size: 10 },
+          maxTicksLimit: 12,
+          callback: (v) => `${v}mm`,
+        },
       },
       y: {
         title: {
@@ -881,21 +970,27 @@ const ProcessModeThreePoint = () => {
                 </span>
                 <span className="text-xs text-gray-400 ml-2">Peak per step</span>
               </div>
-              {barData.length > 0 && (
+              {completedBars.length > 0 && (
                 <span className="text-xs text-gray-400">
-                  {barData.length} bar{barData.length !== 1 ? "s" : ""}
+                  {completedBars.length}
+                  {barSlots.length > 0 ? ` / ${barSlots.length}` : ""} step
+                  {barSlots.length !== 1 ? "s" : ""}
                 </span>
               )}
             </div>
             <div className="flex-1 min-h-0">
-              {barData.length === 0 ? (
+              {completedBars.length === 0 ? (
                 <div className="h-full flex items-center justify-center">
                   <p className="text-gray-400 text-xs text-center">
                     No steps completed yet<br />Start the test to see peak forces
                   </p>
                 </div>
               ) : (
-                <Bar data={barChartConfig} options={barChartOptions} />
+                <Bar
+                  key={completedBars.map((b) => `${b.horizontalMm}-${b.maxForce}`).join("-")}
+                  data={barChartConfig}
+                  options={barChartOptions}
+                />
               )}
             </div>
           </div>
