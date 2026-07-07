@@ -24,6 +24,10 @@ import {
   Ruler,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import {
+  PEAK_COLORS,
+  computeThreePointBarSlots,
+} from "./utils/threePointLogCharts";
 
 // ── Chart.js registration ──────────────────────────────────────────────────────
 ChartJS.register(
@@ -77,40 +81,10 @@ const CSV_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
 const TEST_IN_PROGRESS = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "CATHETER MOVEMENT"]);
 
 // ── Peak colour palette (cycles through if more than 10 steps) ──────────────────
-const PEAK_COLORS = [
-  "#3b82f6", // blue
-  "#10b981", // emerald
-  "#f59e0b", // amber
-  "#ef4444", // red
-  "#8b5cf6", // violet
-  "#ec4899", // pink
-  "#06b6d4", // cyan
-  "#84cc16", // lime
-  "#f97316", // orange
-  "#6366f1", // indigo
-];
+// PEAK_COLORS imported from ./utils/threePointLogCharts
 
 const CONTACT_PHASE = new Set(["SEARCHING CONTACT", "RUNNING"]);
 const SEAL_TARGET_STATUS = new Set(["HOMING", "CATHETER MOVEMENT"]);
-
-// Pre-compute bar slots from config: one slot per measurement interval step
-function computeThreePointBarSlots(config) {
-  if (!config) return [];
-  const testLength = parseFloat(config.testLength);
-  const interval = parseFloat(config.measurementInterval);
-  if (!Number.isFinite(testLength) || !Number.isFinite(interval) || interval <= 0) {
-    return [];
-  }
-  const numSteps = Math.round(testLength / interval);
-  if (numSteps <= 0) return [];
-
-  return Array.from({ length: numSteps }, (_, i) => ({
-    stepIndex: i,
-    horizontalMm: (i + 1) * interval,
-    maxForce: null,
-    color: PEAK_COLORS[i % PEAK_COLORS.length],
-  }));
-}
 
 // ── 3-Point Process Mode Component ────────────────────────────────────────────
 const ProcessModeThreePoint = () => {
@@ -155,7 +129,12 @@ const ProcessModeThreePoint = () => {
 
   // ── CSV logging ───────────────────────────────────────────────────────────────
   const [isLogging, setIsLogging] = useState(false);
-  const lastLogRef = useRef({ distance: null, force: null });
+  const lastLogRef = useRef({
+    testDistance: null,
+    force: null,
+    catheterDistance: null,
+    steps: null,
+  });
 
   // ── UI ────────────────────────────────────────────────────────────────────────
   const [showInfoModal, setShowInfoModal] = useState(false);
@@ -247,7 +226,12 @@ const ProcessModeThreePoint = () => {
       const res = await window.api.startCSV(selectedConfig);
       if (res.success) {
         setIsLogging(true);
-        lastLogRef.current = { distance: null, force: null };
+        lastLogRef.current = {
+          testDistance: null,
+          force: null,
+          catheterDistance: null,
+          steps: null,
+        };
         console.log("✅ CSV logging started:", res.fileName);
       }
     } catch (e) {
@@ -324,7 +308,12 @@ const ProcessModeThreePoint = () => {
           setIsTestActive(false);
           setIsPlotting(false);
           setChartData([]);
-          lastLogRef.current = { distance: null, force: null };
+          lastLogRef.current = {
+            testDistance: null,
+            force: null,
+            catheterDistance: null,
+            steps: null,
+          };
           if (isLogging) {
             stopCsvLogging();
           }
@@ -381,7 +370,7 @@ const ProcessModeThreePoint = () => {
 
 
 
-        // ── Chart & log while plotting is active ────────────────────────────
+        // ── Chart legacy buffer while plotting is active ─────────────────────
         if (isPlotting && !isPausedUI && probeDistance !== null && force !== null) {
           setChartData((prev) => {
             const lastPoint = prev[prev.length - 1];
@@ -390,31 +379,14 @@ const ProcessModeThreePoint = () => {
             }
             return prev;
           });
-
-          // CSV row append
-          if (
-            isLogging &&
-            (lastLogRef.current.distance !== probeDistance ||
-              lastLogRef.current.force !== force)
-          ) {
-            try {
-              window.api.appendCSV({
-                data: { distance: probeDistance, force_mN: force, temperature: 0 },
-                config: selectedConfig,
-              });
-              lastLogRef.current = { distance: probeDistance, force };
-            } catch (e) {
-              console.error("CSV append error:", e);
-            }
-          }
         }
 
-        // ── Auto CSV: start when plotting starts ──────────────────────
-        if (isPlotting && !isLogging && !isPausedUI) {
+        // ── Auto CSV: start when 3-point test is active ─────────────────────
+        if (isTestRunningRef.current && !isLogging && !isPausedUI) {
           startCsvLogging();
         }
 
-        // ── 3-Point: Collect live peak data during contact phase ───────────────
+        // ── 3-Point: Collect live peak data + CSV during contact phase ───────
         if (
           isTestRunningRef.current &&
           !isPausedUI &&
@@ -432,6 +404,34 @@ const ProcessModeThreePoint = () => {
             }
             if (catheterDistance !== null) {
               currentCycleHorizPosRef.current = catheterDistance;
+            }
+          }
+
+          if (
+            isLogging &&
+            (lastLogRef.current.testDistance !== probeDistance ||
+              lastLogRef.current.force !== force ||
+              lastLogRef.current.catheterDistance !== catheterDistance ||
+              lastLogRef.current.steps !== stepsToMove)
+          ) {
+            try {
+              window.api.appendCSV({
+                data: {
+                  testDistance_R452: probeDistance,
+                  force_mN: force,
+                  catheterDistance_R450: catheterDistance,
+                  steps_R451: stepsToMove,
+                },
+                config: selectedConfig,
+              });
+              lastLogRef.current = {
+                testDistance: probeDistance,
+                force,
+                catheterDistance,
+                steps: stepsToMove,
+              };
+            } catch (e) {
+              console.error("CSV append error:", e);
             }
           }
         }
@@ -538,7 +538,12 @@ const ProcessModeThreePoint = () => {
       const res = await window.api.reset3Point();
       if (res?.success) {
         setChartData([]);
-        lastLogRef.current = { distance: null, force: null };
+        lastLogRef.current = {
+          testDistance: null,
+          force: null,
+          catheterDistance: null,
+          steps: null,
+        };
         setIsPaused(false);
         setIsPlotting(false);
         setIsTestActive(false);

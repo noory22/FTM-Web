@@ -151,7 +151,7 @@ const REG_MANUAL_DISTANCE = 71;   // 1 register (16-bit integer) — Catheter Di
 const REG_MACHINE_STATUS = 11;    // 1 register (16-bit integer) — Machine Status (R11): 1=IDLE, 2=HOMING, 3=READY
 const REG_STEPS = 451;             // 1 register (16-bit integer) — No. of Steps to move (R72)
 const REG_SETTINGS_FORCE = 30;    // 1 register (16-bit integer) — Settings Force (R30, grams)
-const REG_CATHDIST = 450;          // 1 register (16-bit integer) — Catheter Distance for 2-Point(R450)
+const REG_CATHDIST = 450;          // 1 register (16-bit integer) — Catheter Distance for 3-Point(R450)
 const TP_TEST_DIST = 452;          // 1 register (16-bit integer) — Test Distance for 3-point process (R452)
 
 // -------------------------

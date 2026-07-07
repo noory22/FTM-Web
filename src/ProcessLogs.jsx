@@ -16,18 +16,51 @@ import {
   Gauge,
   RotateCcw,
 } from "lucide-react";
+import { Line as ChartJsLine, Bar as ChartJsBar } from "react-chartjs-2";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  BarController,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from "chart.js";
 import {
   LineChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
-  Legend,
   ReferenceLine,
 } from "recharts";
 import { useNavigate } from "react-router-dom";
+import {
+  buildThreePointChartsFromRows,
+  buildMultiPeakChartConfig,
+  buildMultiPeakChartOptions,
+  buildBarChartConfig,
+  buildBarChartOptions,
+} from "./utils/threePointLogCharts";
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+  BarController,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 const ProcessLogs = () => {
   const navigate = useNavigate();
@@ -42,6 +75,8 @@ const ProcessLogs = () => {
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
   const [forwardData, setForwardData] = useState([]);
   const [backwardData, setBackwardData] = useState([]);
+  const [threePointPeakSeries, setThreePointPeakSeries] = useState([]);
+  const [threePointBarSlots, setThreePointBarSlots] = useState([]);
 
 
   const [showCurvesDropdown, setShowCurvesDropdown] = useState(false);
@@ -130,23 +165,24 @@ const ProcessLogs = () => {
         
         let fData = [];
         let bData = [];
+        let charts = { peakSeries: [], barSlots: [] };
         
         if (testType === '2-point') {
           fData = result.data || [];
           bData = [];
-        } else if (testType === '3-point') {
-          const testLength = configData.testLength || '--';
-          const motion = extractFullMotionData(result.data || [], testLength);
-          fData = motion.forwardData;
-          bData = motion.backwardData;
+        } else if (testType === '3-point' || result.dataFormat === '3-point') {
+          charts = buildThreePointChartsFromRows(result.data || [], configData);
+          fData = [];
+          bData = [];
         } else {
-          // Legacy format
           const pathLength = configData.pathlength || configData.pathLength;
           const motion = extractFullMotionData(result.data || [], pathLength);
           fData = motion.forwardData;
           bData = motion.backwardData;
         }
 
+        setThreePointPeakSeries(charts.peakSeries);
+        setThreePointBarSlots(charts.barSlots);
         setForwardData(fData);
         setBackwardData(bData);
 
@@ -156,6 +192,8 @@ const ProcessLogs = () => {
           backwardData: bData,
           configData: configData,
           rawData: result.rawData,
+          threePointPeakSeries: charts.peakSeries,
+          threePointBarSlots: charts.barSlots,
         });
       } else {
         alert("Error reading log file: " + result.error);
@@ -190,6 +228,8 @@ const ProcessLogs = () => {
           setSelectedLog(null);
           setForwardData([]);
           setBackwardData([]);
+          setThreePointPeakSeries([]);
+          setThreePointBarSlots([]);
         }
 
         setShowDeleteConfirm(false);
@@ -225,6 +265,8 @@ const ProcessLogs = () => {
       setSelectedLog(null);
       setForwardData([]);
       setBackwardData([]);
+      setThreePointPeakSeries([]);
+      setThreePointBarSlots([]);
       setShowDeleteAllConfirm(false);
       setShowSuccessMessage(true);
 
@@ -530,7 +572,7 @@ const ProcessLogs = () => {
                             </p>
                           </div>
                           <p className="text-blue-700 font-bold">
-                            {selectedLog.configData.measurementInterval || "--"} s
+                            {selectedLog.configData.measurementInterval || "--"} mm
                           </p>
                         </div>
 
@@ -776,7 +818,7 @@ const ProcessLogs = () => {
                   </div>
                   <div>
                     <h2 className="text-xl font-semibold text-slate-800">
-                      Force vs Distance Analysis
+                      {testType === '3-point' ? '3-Point Test Analysis' : 'Force vs Distance Analysis'}
                     </h2>
                     <p className="text-slate-500 text-xs font-medium">Logged data analysis</p>
                     {/* <p className="text-slate-600 text-sm">
@@ -784,7 +826,7 @@ const ProcessLogs = () => {
                     </p> */}
                   </div>
                 </div>
-                {selectedLog && (
+                {selectedLog && testType !== '3-point' && (
                   <div className="flex items-center space-x-6 bg-slate-50/50 px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
                     <div className="flex items-center space-x-3">
                       <div className="w-8 h-1 bg-blue-500 rounded-full shadow-sm shadow-blue-500/50" />
@@ -803,9 +845,13 @@ const ProcessLogs = () => {
               </div>
 
               {selectedLog ? (
-                // <div className="h-96 relative">
-                // <div className="h-[600px] relative">
-                // <div className="h-full relative">
+                testType === '3-point' ? (
+                  <ThreePointLogCharts
+                    peakSeries={threePointPeakSeries}
+                    barSlots={threePointBarSlots}
+                    config={selectedLog.configData}
+                  />
+                ) : (
                 <div className="relative w-full" style={{ minHeight: '300px', height: '100%' }}>
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
@@ -833,7 +879,7 @@ const ProcessLogs = () => {
                           style: { fill: "#64748b", fontWeight: "bold" },
                         }}
                       />
-                      <Tooltip
+                      <RechartsTooltip
                         contentStyle={{
                           backgroundColor: "white",
                           border: "2px solid #e2e8f0",
@@ -878,6 +924,7 @@ const ProcessLogs = () => {
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
+                )
               ) : (
                 // <div className="h-96 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200">
                 // <div className="h-[600px] flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200">
@@ -1172,6 +1219,74 @@ const ProcessLogs = () => {
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+const ThreePointLogCharts = ({ peakSeries, barSlots, config }) => {
+  const completedBars = barSlots.filter((slot) => slot.maxForce !== null);
+  const testLengthMax = config ? parseFloat(config.testLength) || undefined : undefined;
+  const hasLineData = peakSeries.length > 0;
+  const hasBarData = completedBars.length > 0;
+
+  if (!hasLineData && !hasBarData) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200 min-h-[300px]">
+        <p className="text-slate-500 text-sm text-center px-4">
+          No 3-point chart data found in this log file.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex flex-col gap-4 min-h-0">
+      <div className="flex-1 bg-slate-50/50 rounded-xl border border-slate-200 p-3 min-h-[200px] flex flex-col">
+        <div className="mb-2 shrink-0">
+          <span className="text-sm font-bold text-slate-800">Force vs Test Distance</span>
+          <span className="text-xs text-slate-400 ml-2">Multi-step peaks</span>
+        </div>
+        <div className="flex-1 min-h-[180px]">
+          {hasLineData ? (
+            <ChartJsLine
+              data={buildMultiPeakChartConfig(peakSeries)}
+              options={buildMultiPeakChartOptions()}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+              No peak line data
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="shrink-0 bg-slate-50/50 rounded-xl border border-slate-200 p-3 flex flex-col" style={{ height: "220px" }}>
+        <div className="mb-2 shrink-0 flex items-center justify-between">
+          <div>
+            <span className="text-sm font-bold text-slate-800">Force vs Horizontal Distance</span>
+            <span className="text-xs text-slate-400 ml-2">Peak per step</span>
+          </div>
+          {hasBarData && (
+            <span className="text-xs text-slate-400">
+              {completedBars.length}
+              {barSlots.length > 0 ? ` / ${barSlots.length}` : ""} steps
+            </span>
+          )}
+        </div>
+        <div className="flex-1 min-h-0">
+          {hasBarData ? (
+            <ChartJsBar
+              key={completedBars.map((b) => `${b.horizontalMm}-${b.maxForce}`).join("-")}
+              data={buildBarChartConfig(barSlots)}
+              options={buildBarChartOptions(testLengthMax)}
+            />
+          ) : (
+            <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+              No bar chart data
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 };
