@@ -42,6 +42,7 @@ const syncModeCoilsForRoute = async (pathname) => {
     if (testType === '3-point') return window.api.threePointActivate();
     return null;
   }
+  // For any other route, deactivate manual mode
   return window.api.deactivateManual();
 };
 
@@ -212,10 +213,15 @@ const AppShell = () => {
 
     if (path.includes('manual-mode')) {
       try {
-        console.log('Deactivating manual mode before leaving...');
-        await window.api.deactivateManual?.();
+        console.log('🔄 Deactivating manual mode before leaving...');
+        const result = await window.api.deactivateManual?.();
+        if (result && result.success) {
+          console.log('✅ Manual mode deactivated successfully');
+        } else {
+          console.error('❌ Failed to deactivate manual mode:', result?.message || 'Unknown error');
+        }
       } catch (error) {
-        console.error('Failed to deactivate manual mode:', error);
+        console.error('❌ Failed to deactivate manual mode:', error);
       }
       navigate('/');
     } else if (path.includes('process-mode')) {

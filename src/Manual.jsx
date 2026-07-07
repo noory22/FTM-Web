@@ -32,6 +32,7 @@ const Manual = () => {
   const streamRef = useRef(null);
   const movementTimeoutRef = useRef(null);
   const probeIntervalRef = useRef(null);
+  const activationDoneRef = useRef(false);
 
   const [force, setForce] = useState('--');
   const [probeDistance, setProbeDistance] = useState('--');
@@ -151,37 +152,39 @@ const Manual = () => {
     };
   }, []);
 
-  // Activate Manual Mode on component mount
+  // Activate Manual Mode on component mount - ONLY ONCE
   useEffect(() => {
     const activateManualMode = async () => {
+      // Prevent multiple activations
+      if (activationDoneRef.current) {
+        console.log("Manual mode already activated, skipping duplicate activation");
+        return;
+      }
+      
       if (connectionStatus.connected && !emergencyActive) {
         try {
           const result = await window.api.manualModeActivate();
           if (result.success) {
             setManualModeActive(true);
-            console.log("Manual mode activated");
+            activationDoneRef.current = true;
+            console.log("✅ Manual mode activated");
+          } else {
+            console.error("❌ Manual mode activation failed:", result.message);
           }
         } catch (error) {
-          console.error("Failed to activate manual mode:", error);
+          console.error("❌ Failed to activate manual mode:", error);
         }
       }
     };
 
     activateManualMode();
 
+    // Cleanup - only clear intervals, DO NOT deactivate manual mode here
     return () => {
-      const deactivateManualMode = async () => {
-        try {
-          if (probeIntervalRef.current) clearInterval(probeIntervalRef.current);
-          if (movementTimeoutRef.current) clearTimeout(movementTimeoutRef.current);
-          await window.api.manualModeDeactivate();
-          setManualModeActive(false);
-          console.log("Manual mode deactivated");
-        } catch (error) {
-          console.error("Failed to deactivate manual mode:", error);
-        }
-      };
-      deactivateManualMode();
+      if (probeIntervalRef.current) clearInterval(probeIntervalRef.current);
+      if (movementTimeoutRef.current) clearTimeout(movementTimeoutRef.current);
+      // ❌ DO NOT deactivate manual mode in cleanup
+      // Deactivation is handled by the back button
     };
   }, [connectionStatus.connected, emergencyActive]);
 
@@ -405,6 +408,7 @@ const Manual = () => {
             setShowConnectionError(true);
             resetLiveValues();
             setManualModeActive(false);
+            activationDoneRef.current = false;
           }
         })
         .catch(() => {
@@ -412,6 +416,7 @@ const Manual = () => {
           setShowConnectionError(true);
           resetLiveValues();
           setManualModeActive(false);
+          activationDoneRef.current = false;
         });
     };
 
@@ -425,6 +430,7 @@ const Manual = () => {
         setShowConnectionError(true);
         resetLiveValues();
         setManualModeActive(false);
+        activationDoneRef.current = false;
       } else {
         setShowConnectionError(false);
       }
@@ -453,11 +459,8 @@ const Manual = () => {
       window.api.readData()
         .then(data => {
           if (data.success) {
-            // Re-activate manual mode on PLC if it turns off while we are on this screen
-            if (data.manual === false && manualModeActive && isComponentMounted.current) {
-              console.log("⚠️ Manual mode deactivated on PLC, re-activating...");
-              window.api.manualModeActivate().catch(e => console.error("Failed to re-activate manual mode:", e));
-            }
+            // ✅ REMOVED: No manual mode re-activation logic here
+            // Manual mode is activated only once when the component mounts
 
             const f = Number(data.force_mN);
             setForce(isFinite(f) ? f.toFixed(2) : '--');
@@ -516,7 +519,11 @@ const Manual = () => {
         setShowConnectionError(false);
         setConnectionStatus(prev => ({ ...prev, connected: true }));
         const manualResult = await window.api.manualModeActivate();
-        if (manualResult.success) setManualModeActive(true);
+        if (manualResult.success) {
+          setManualModeActive(true);
+          activationDoneRef.current = true;
+          console.log("✅ Manual mode re-activated after reconnect");
+        }
       }
     } catch (e) {
       console.error('Reconnect error:', e);
@@ -542,11 +549,17 @@ const Manual = () => {
 
   const handleBackButton = async () => {
     try {
-      console.log('Deactivating manual mode before leaving...');
-      await window.api.deactivateManual();
-      console.log('Manual mode deactivated successfully');
+      console.log('🔄 Deactivating manual mode before leaving...');
+      const result = await window.api.deactivateManual();
+      if (result.success) {
+        setManualModeActive(false);
+        activationDoneRef.current = false;
+        console.log('✅ Manual mode deactivated successfully');
+      } else {
+        console.error('❌ Failed to deactivate manual mode:', result.message);
+      }
     } catch (error) {
-      console.error('Failed to deactivate manual mode:', error);
+      console.error('❌ Failed to deactivate manual mode:', error);
     } finally {
       navigate('/');
     }
