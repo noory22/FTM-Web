@@ -22,6 +22,7 @@ import {
   Activity,
   Gauge,
   Ruler,
+  AlertCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -80,6 +81,9 @@ const CSV_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
 // Statuses that indicate test in progress (block navigation)
 const TEST_IN_PROGRESS = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "CATHETER MOVEMENT"]);
 
+// Statuses where force limit monitoring is active (excludes PAUSED)
+const FORCE_LIMIT_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING", "CATHETER MOVEMENT"]);
+
 // ── Peak colour palette (cycles through if more than 10 steps) ──────────────────
 // PEAK_COLORS imported from ./utils/threePointLogCharts
 
@@ -119,6 +123,11 @@ const ProcessModeThreePoint = () => {
   const currentCycleHorizPosRef = useRef(null);
   const currentCycleStepIdxRef  = useRef(0);  // How many peaks have been sealed
   const isTestRunningRef        = useRef(false); // True while a 3-pt test is active
+  const forceLimitStopTriggeredRef = useRef(false);
+  const showForceLimitModalRef  = useRef(false);
+  const showNoForceModalRef     = useRef(false);
+  const hasAcknowledgedForceLimitRef = useRef(false);
+  const hasAcknowledgedNoForceRef    = useRef(false);
 
   const resetCycleTracking = useCallback(() => {
     currentPeakRef.current = [];
@@ -147,7 +156,37 @@ const ProcessModeThreePoint = () => {
   const [isResetting, setIsResetting] = useState(false);
   const [isPlotting, setIsPlotting] = useState(false);
   const [isTestActive, setIsTestActive] = useState(false);
+  const [showForceLimitModal, setShowForceLimitModal] = useState(false);
+  const [showNoForceModal, setShowNoForceModal] = useState(false);
+  const [hasAcknowledgedForceLimit, setHasAcknowledgedForceLimit] = useState(false);
+  const [hasAcknowledgedNoForce, setHasAcknowledgedNoForce] = useState(false);
   const isPausedUI = (isPaused || isPausing) && !isResuming;
+
+  const resetSafetyTracking = useCallback(() => {
+    forceLimitStopTriggeredRef.current = false;
+    hasAcknowledgedForceLimitRef.current = false;
+    hasAcknowledgedNoForceRef.current = false;
+    setShowForceLimitModal(false);
+    setShowNoForceModal(false);
+    setHasAcknowledgedForceLimit(false);
+    setHasAcknowledgedNoForce(false);
+  }, []);
+
+  useEffect(() => {
+    showForceLimitModalRef.current = showForceLimitModal;
+  }, [showForceLimitModal]);
+
+  useEffect(() => {
+    showNoForceModalRef.current = showNoForceModal;
+  }, [showNoForceModal]);
+
+  useEffect(() => {
+    hasAcknowledgedForceLimitRef.current = hasAcknowledgedForceLimit;
+  }, [hasAcknowledgedForceLimit]);
+
+  useEffect(() => {
+    hasAcknowledgedNoForceRef.current = hasAcknowledgedNoForce;
+  }, [hasAcknowledgedNoForce]);
 
   // ── Screen size ───────────────────────────────────────────────────────────────
   const [screenW, setScreenW] = useState(window.innerWidth);
@@ -280,6 +319,59 @@ const ProcessModeThreePoint = () => {
           force:            force            !== null ? force.toFixed(2)            : "--",
           stepsToMove: stepsToMove,
         });
+
+        // ── Check No Force Detected (same logic as 2-point) ─────────────────
+        if (
+          status === "SEARCHING CONTACT" &&
+          selectedConfig &&
+          selectedConfig.probeTravelLimit !== undefined &&
+          selectedConfig.probeTravelLimit !== null &&
+          probeDistance !== null &&
+          force !== null
+        ) {
+          const travelLimit = parseFloat(selectedConfig.probeTravelLimit);
+          if (!isNaN(travelLimit) && probeDistance >= travelLimit && force <= 0.1) {
+            if (!showNoForceModalRef.current && !hasAcknowledgedNoForceRef.current) {
+              setShowNoForceModal(true);
+            }
+          }
+        }
+
+        // Reset the latch when machine status is no longer SEARCHING CONTACT
+        if (status !== "SEARCHING CONTACT" && hasAcknowledgedNoForceRef.current) {
+          setHasAcknowledgedNoForce(false);
+        }
+
+        // ── Force limit exceeded: stop process and show dialog ─────────────
+        if (
+          selectedConfig &&
+          selectedConfig.forceLimit !== undefined &&
+          selectedConfig.forceLimit !== null &&
+          force !== null &&
+          isTestRunningRef.current
+        ) {
+          const limitVal = parseFloat(selectedConfig.forceLimit);
+          if (
+            !isNaN(limitVal) &&
+            force >= limitVal &&
+            FORCE_LIMIT_ACTIVE.has(status) &&
+            !showForceLimitModalRef.current &&
+            !hasAcknowledgedForceLimitRef.current
+          ) {
+            if (!forceLimitStopTriggeredRef.current) {
+              forceLimitStopTriggeredRef.current = true;
+              setIsPaused(true);
+              setIsPausing(false);
+              window.api.stop3Point().catch((e) => {
+                console.error("Force limit stop error:", e);
+              });
+            }
+            setShowForceLimitModal(true);
+          } else if (hasAcknowledgedForceLimitRef.current && force < limitVal) {
+            setHasAcknowledgedForceLimit(false);
+            forceLimitStopTriggeredRef.current = false;
+          }
+        }
 
         const prev = prevStatusRef.current;
         prevStatusRef.current = status;
@@ -456,7 +548,6 @@ const ProcessModeThreePoint = () => {
     isPausing,
     isResetting,
     isPlotting,
-    isPaused,
     resetCycleTracking,
   ]);
 
@@ -464,6 +555,7 @@ const ProcessModeThreePoint = () => {
   const handleStart = async () => {
     setIsStarting(true);
     isTestRunningRef.current = true;
+    resetSafetyTracking();
     setIsTestActive(true);
     setIsPlotting(true);
     setPeakSeries([]);
@@ -554,6 +646,7 @@ const ProcessModeThreePoint = () => {
         currentCycleStepIdxRef.current  = 0;
         isTestRunningRef.current        = false;
         resetCycleTracking();
+        resetSafetyTracking();
         console.log("🔄 RESET command sent to PLC");
       } else {
         console.error("Reset failed:", res?.message);
@@ -562,6 +655,28 @@ const ProcessModeThreePoint = () => {
     } catch (e) {
       console.error("Reset error:", e);
       setIsResetting(false);
+    }
+  };
+
+  const handleForceLimitReset = async () => {
+    try {
+      await window.api.reset3Point();
+      setShowForceLimitModal(false);
+      setHasAcknowledgedForceLimit(true);
+      console.log("Force limit Reset: COIL_3RESET turned ON");
+    } catch (e) {
+      console.error("Error writing 3RESET after force limit:", e);
+    }
+  };
+
+  const handleNoForceReset = async () => {
+    try {
+      await window.api.reset3Point();
+      setShowNoForceModal(false);
+      setHasAcknowledgedNoForce(true);
+      console.log("No force Reset: COIL_3RESET turned ON");
+    } catch (e) {
+      console.error("Error writing 3RESET after no force:", e);
     }
   };
 
@@ -802,6 +917,72 @@ const ProcessModeThreePoint = () => {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="h-full bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 text-gray-900 overflow-hidden flex flex-col">
+
+      {/* ── No Force Detected Dialog ─────────────────────────────────────────── */}
+      {showNoForceModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-yellow-100 animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-gradient-to-r from-yellow-50 to-amber-50 px-6 py-5 border-b border-yellow-100 flex items-center justify-center flex-col text-center">
+              <div className="p-3 bg-yellow-100 rounded-full mb-3 text-yellow-600 animate-bounce">
+                <Info className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-extrabold text-yellow-950">No Force detected</h3>
+            </div>
+            <div className="p-6 text-center space-y-4">
+              <p className="text-gray-600 text-sm">
+                The probe travel limit of{" "}
+                <span className="font-bold text-yellow-600">{selectedConfig?.probeTravelLimit} mm</span>{" "}
+                was reached during the contact search, but no force was detected.
+              </p>
+              <div className="bg-yellow-50/50 rounded-xl p-3 border border-yellow-100">
+                <p className="text-xs text-yellow-800 font-medium">
+                  Current Distance: <span className="text-sm font-bold">{liveData.probeDistance} mm</span>
+                </p>
+              </div>
+              <button
+                onClick={handleNoForceReset}
+                className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center space-x-2"
+              >
+                <RotateCcw className="w-5 h-5" />
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Force Limit Exceeded Dialog ──────────────────────────────────────── */}
+      {showForceLimitModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full overflow-hidden border border-red-100">
+            <div className="bg-gradient-to-r from-red-50 to-orange-50 px-6 py-5 border-b border-red-100 flex items-center justify-center flex-col text-center">
+              <div className="p-3 bg-red-100 rounded-full mb-3 text-red-600">
+                <AlertCircle className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-extrabold text-red-950">Force Limit Exceeded</h3>
+            </div>
+            <div className="p-6 text-center space-y-4">
+              <p className="text-gray-600 text-sm">
+                The real-time force has reached or exceeded the configured limit of{" "}
+                <span className="font-bold text-red-600">{selectedConfig?.forceLimit} mN</span>.
+                The process has been stopped.
+              </p>
+              <div className="bg-red-50/50 rounded-xl p-3 border border-red-100">
+                <p className="text-xs text-red-800 font-medium">
+                  Current Force: <span className="text-sm font-bold">{liveData.force} mN</span>
+                </p>
+              </div>
+              <button
+                onClick={handleForceLimitReset}
+                className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center space-x-2"
+              >
+                <RotateCcw className="w-5 h-5" />
+                <span>Reset</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Info Modal ─────────────────────────────────────────────────────────── */}
       {showInfoModal && (
