@@ -52,7 +52,7 @@ const App = () => {
             path="/"
             element={
               <>
-                {/* <SafetyAlert /> */}
+                <SafetyAlert />
                 <MainMenu />
               </>
             }
@@ -63,7 +63,7 @@ const App = () => {
             path="/main-menu"
             element={
               <>
-                {/* <SafetyAlert /> */}
+                <SafetyAlert />
                 <MainMenu />
               </>
             }
@@ -74,7 +74,7 @@ const App = () => {
             path="/handle-config/load"
             element={
               <>
-                {/* <SafetyAlert /> */}
+                <SafetyAlert />
                 <HandleConfig mode="load" />
               </>
             }
@@ -85,7 +85,7 @@ const App = () => {
             path="/manual-mode"
             element={
               <>
-                {/* <SafetyAlert /> */}
+                <SafetyAlert />
                 <Manual />
               </>
             }
@@ -98,7 +98,7 @@ const App = () => {
             path="/process-mode/2-point"
             element={
               <>
-                {/* <SafetyAlert /> */}
+                <SafetyAlert />
                 <ProcessModeTwoPoint />
               </>
             }
@@ -109,11 +109,20 @@ const App = () => {
             path="/process-mode/3-point"
             element={
               <>
-                {/* <SafetyAlert /> */}
+                <SafetyAlert />
                 <ProcessModeThreePoint />
               </>
             }
           />
+          <Route 
+            path="/settings" 
+            element={
+            <>
+            <SafetyAlert />
+            <Settings /></>
+            }
+            />
+          
 
           {/* Routes without SafetyAlert */}
           <Route path="/create-config" element={<CreateConfig />} />

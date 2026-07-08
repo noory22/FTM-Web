@@ -13,6 +13,7 @@ import {
   ChevronLeft,
 } from 'lucide-react';
 import { getVisibleNavigationGroups, pageTitles } from './navigation.js';
+import SafetyAlert from './SafetyAlert.jsx';
 
 const getStoredTestType = () => {
   try {
@@ -88,6 +89,12 @@ const AppShell = () => {
       try {
         const data = await window.api.readData();
         if (data.success) {
+          if (data.emergencyActive !== undefined) {
+            setEmergencyActive(Boolean(data.emergencyActive));
+          }
+          if (data.powerActive !== undefined) {
+            setPowerActive(Boolean(data.powerActive));
+          }
           setPlcData({
             machineStatus: data.machineStatusDisplay || 'IDLE',
             distance: data.distance !== undefined ? `${data.distance} mm` : '--',
@@ -159,9 +166,27 @@ const AppShell = () => {
       }
     };
 
+    const syncSafetyStatus = async () => {
+      try {
+        const [power, emergency] = await Promise.all([
+          window.api?.checkPowerStatus?.(),
+          window.api?.checkEmergencyStatus?.(),
+        ]);
+        if (!mounted) return;
+        setPowerActive(Boolean(power?.active));
+        setEmergencyActive(Boolean(emergency?.active));
+      } catch (error) {
+        console.error('Failed to sync safety status:', error);
+      }
+    };
+
     const handleModbusStatus = (event) => {
-      setConnectionStatus(event.detail === 'connected' ? 'connected' : 'disconnected');
+      const connected = event.detail === 'connected';
+      setConnectionStatus(connected ? 'connected' : 'disconnected');
       setConnectionChecked(true);
+      if (connected) {
+        syncSafetyStatus();
+      }
     };
     const handlePowerStatus = (event) => setPowerActive(event.detail === true);
     const handleEmergencyStatus = (event) => setEmergencyActive(event.detail === true);
@@ -200,6 +225,7 @@ const AppShell = () => {
 
   const currentPath = `${location.pathname}${location.search}`;
   const pageTitle = pageTitles[currentPath] || pageTitles[location.pathname] || 'Flexural Testing Machine';
+  const isMainMenu = location.pathname === '/' || location.pathname === '/main-menu';
 
   const itemKey = (item) => item.path || item.label;
 
@@ -456,10 +482,17 @@ const AppShell = () => {
                 </button>
               )}
 
-              {emergencyActive && (
+              {isMainMenu && emergencyActive && (
                 <div className="flex items-center gap-1.5 rounded-lg bg-red-100 border border-red-300 px-3 py-1.5 animate-pulse">
                   <span className="h-2 w-2 rounded-full bg-red-600" />
                   <span className="text-sm font-bold text-red-700">EMERGENCY</span>
+                </div>
+              )}
+
+              {isMainMenu && connectionStatus === 'connected' && !powerActive && (
+                <div className="flex items-center gap-1.5 rounded-lg bg-amber-100 border border-amber-300 px-3 py-1.5 animate-pulse">
+                  <span className="h-2 w-2 rounded-full bg-amber-600" />
+                  <span className="text-sm font-bold text-amber-800">POWER STOP</span>
                 </div>
               )}
 
@@ -550,7 +583,9 @@ const AppShell = () => {
           </header>
 
           <main className="min-w-0 flex-1 overflow-x-hidden">
-            <Outlet />
+            <SafetyAlert>
+              <Outlet />
+            </SafetyAlert>
           </main>
         </div>
       </div>

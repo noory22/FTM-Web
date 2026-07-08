@@ -10,6 +10,8 @@ class PlcBridge {
     this.lastPowState = false;
     this.lastHomeState = false;
     this.lastLLSState = false;
+    this._lastSentEmer = null;
+    this._lastSentPow = null;
 
     this._mainWindowGetter = null;
     this._callbacks = {};
@@ -37,6 +39,17 @@ class PlcBridge {
     const mainWindow = this._getMainWindow();
     if (mainWindow) {
       mainWindow.webContents.send(channel, payload);
+    }
+  }
+
+  _syncSafetyStatusToRenderer() {
+    if (this._lastSentEmer !== this.lastEmerState) {
+      this._lastSentEmer = this.lastEmerState;
+      this._sendToRenderer('emergency-status', this.lastEmerState);
+    }
+    if (this._lastSentPow !== this.lastPowState) {
+      this._lastSentPow = this.lastPowState;
+      this._sendToRenderer('power-status', this.lastPowState);
     }
   }
 
@@ -100,6 +113,8 @@ class PlcBridge {
     if (this._callbacks.onPlcState) {
       this._callbacks.onPlcState(payload);
     }
+
+    this._syncSafetyStatusToRenderer();
   }
 
   _handleWorkerEvent(event, payload) {
@@ -112,10 +127,12 @@ class PlcBridge {
         break;
       case 'emergency-status':
         this.lastEmerState = payload;
+        this._lastSentEmer = payload;
         this._sendToRenderer('emergency-status', payload);
         break;
       case 'power-status':
         this.lastPowState = payload;
+        this._lastSentPow = payload;
         this._sendToRenderer('power-status', payload);
         break;
       case 'connected':
@@ -306,6 +323,9 @@ class PlcBridge {
       manual: s.manual,
       twoPoint: s.twoPoint,
       threePoint: s.threePoint,
+
+      emergencyActive: this.lastEmerState,
+      powerActive: this.lastPowState,
 
       rawRegisters: {},
     };

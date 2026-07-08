@@ -454,7 +454,7 @@ async function processModbusLoop() {
 
       try {
         const powResult = await client.readCoils(COIL_POW, 1);
-        currentPowState = !Boolean(powResult.data[0]);
+        currentPowState = Boolean(powResult.data[0]);
         cycleSuccess = true;
       } catch (e) {
         console.error('❌ COIL_POW read error:', e.message);

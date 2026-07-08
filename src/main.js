@@ -118,8 +118,8 @@ let PORT = null; // Auto-detected
 const BAUDRATE = 115200;
 const TIMEOUT = 0; // Using buffered read, timeout not as critical in this config
 
-const COIL_POW = 1003
-const COIL_EMER = 1004
+const COIL_POW = 1002       //X2
+const COIL_EMER = 1009      //X9
 const COIL_LLS = 3922; // Modbus address for M1922 (2000 + 1922)
 
 // Manual Mode Coils
