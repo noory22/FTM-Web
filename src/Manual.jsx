@@ -503,7 +503,7 @@ const Manual = () => {
         })
         .catch(() => resetLiveValues());
     };
-
+    
     let intervalId;
     if (connectionStatus.connected && !emergencyActive) {
       readData();
@@ -511,6 +511,14 @@ const Manual = () => {
     }
     return () => { if (intervalId) clearInterval(intervalId); };
   }, [connectionStatus.connected, emergencyActive, homingTriggered]);
+
+  // Clear graph data when machine enters homing state
+  useEffect(() => {
+    if (machineStatus === 2) { // HOMING state
+      setGraphData([]);
+      console.log("🧹 Graph data cleared due to homing state");
+    }
+  }, [machineStatus]);
 
   const handleReconnect = async () => {
     try {

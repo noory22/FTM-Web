@@ -116,6 +116,7 @@ const ProcessModeThreePoint = () => {
   const [peakSeries, setPeakSeries]           = useState([]); // Sealed completed peaks
   const [currentPeakData, setCurrentPeakData] = useState([]); // Live cycle line
   const [barSlots, setBarSlots]               = useState([]); // Peak force per measurement interval
+  const [chartSessionKey, setChartSessionKey]   = useState(0);
 
   // Refs for peak tracking (updated in-place; don't need re-render)
   const currentPeakRef          = useRef([]);
@@ -124,6 +125,7 @@ const ProcessModeThreePoint = () => {
   const currentCycleStepIdxRef  = useRef(0);  // How many peaks have been sealed
   const isTestRunningRef        = useRef(false); // True while a 3-pt test is active
   const forceLimitStopTriggeredRef = useRef(false);
+  const noForceStopTriggeredRef = useRef(false);
   const showForceLimitModalRef  = useRef(false);
   const showNoForceModalRef     = useRef(false);
   const hasAcknowledgedForceLimitRef = useRef(false);
@@ -135,6 +137,19 @@ const ProcessModeThreePoint = () => {
     currentCycleMaxForceRef.current = 0;
     currentCycleHorizPosRef.current = null;
   }, []);
+
+  const clearChartState = useCallback(() => {
+    setPeakSeries([]);
+    setBarSlots([]);
+    setChartData([]);
+    resetCycleTracking();
+    currentCycleStepIdxRef.current = 0;
+  }, [resetCycleTracking]);
+
+  const clearChartsAndAxes = useCallback(() => {
+    clearChartState();
+    setChartSessionKey((k) => k + 1);
+  }, [clearChartState]);
 
   // ── CSV logging ───────────────────────────────────────────────────────────────
   const [isLogging, setIsLogging] = useState(false);
@@ -164,12 +179,23 @@ const ProcessModeThreePoint = () => {
 
   const resetSafetyTracking = useCallback(() => {
     forceLimitStopTriggeredRef.current = false;
+    noForceStopTriggeredRef.current = false;
     hasAcknowledgedForceLimitRef.current = false;
     hasAcknowledgedNoForceRef.current = false;
     setShowForceLimitModal(false);
     setShowNoForceModal(false);
     setHasAcknowledgedForceLimit(false);
     setHasAcknowledgedNoForce(false);
+  }, []);
+
+  const resetPlayPauseUIState = useCallback(() => {
+    setIsPaused(false);
+    setIsPausing(false);
+    setIsResuming(false);
+    setIsStarting(false);
+    setIsPlotting(false);
+    setIsTestActive(false);
+    isTestRunningRef.current = false;
   }, []);
 
   useEffect(() => {
@@ -320,26 +346,36 @@ const ProcessModeThreePoint = () => {
           stepsToMove: stepsToMove,
         });
 
-        // ── Check No Force Detected (same logic as 2-point) ─────────────────
+        // ── Check No Force Detected (R452 tpTestDist vs probeTravelLimit, any status) ──
         if (
-          status === "SEARCHING CONTACT" &&
+          isTestRunningRef.current &&
           selectedConfig &&
           selectedConfig.probeTravelLimit !== undefined &&
           selectedConfig.probeTravelLimit !== null &&
           probeDistance !== null &&
-          force !== null
+          force !== null &&
+          !showForceLimitModalRef.current
         ) {
           const travelLimit = parseFloat(selectedConfig.probeTravelLimit);
-          if (!isNaN(travelLimit) && probeDistance >= travelLimit && force <= 0.1) {
+          const noForceCondition =
+            !isNaN(travelLimit) && probeDistance >= travelLimit && force <= 0.1;
+
+          if (noForceCondition) {
             if (!showNoForceModalRef.current && !hasAcknowledgedNoForceRef.current) {
+              if (!noForceStopTriggeredRef.current) {
+                noForceStopTriggeredRef.current = true;
+                setIsPaused(true);
+                setIsPausing(false);
+                window.api.stop3Point().catch((e) => {
+                  console.error("No force stop error:", e);
+                });
+              }
               setShowNoForceModal(true);
             }
+          } else if (hasAcknowledgedNoForceRef.current) {
+            setHasAcknowledgedNoForce(false);
+            noForceStopTriggeredRef.current = false;
           }
-        }
-
-        // Reset the latch when machine status is no longer SEARCHING CONTACT
-        if (status !== "SEARCHING CONTACT" && hasAcknowledgedNoForceRef.current) {
-          setHasAcknowledgedNoForce(false);
         }
 
         // ── Force limit exceeded: stop process and show dialog ─────────────
@@ -399,7 +435,7 @@ const ProcessModeThreePoint = () => {
           isTestRunningRef.current = false;
           setIsTestActive(false);
           setIsPlotting(false);
-          setChartData([]);
+          clearChartsAndAxes();
           lastLogRef.current = {
             testDistance: null,
             force: null,
@@ -549,6 +585,7 @@ const ProcessModeThreePoint = () => {
     isResetting,
     isPlotting,
     resetCycleTracking,
+    clearChartsAndAxes,
   ]);
 
   // ── Button handlers ───────────────────────────────────────────────────────────
@@ -558,7 +595,8 @@ const ProcessModeThreePoint = () => {
     resetSafetyTracking();
     setIsTestActive(true);
     setIsPlotting(true);
-    setPeakSeries([]);
+    clearChartState();
+    setChartSessionKey((k) => k + 1);
     setBarSlots(computeThreePointBarSlots(selectedConfig));
     currentCycleStepIdxRef.current = 0;
     resetCycleTracking();
@@ -629,23 +667,15 @@ const ProcessModeThreePoint = () => {
     try {
       const res = await window.api.reset3Point();
       if (res?.success) {
-        setChartData([]);
+        clearChartsAndAxes();
         lastLogRef.current = {
           testDistance: null,
           force: null,
           catheterDistance: null,
           steps: null,
         };
-        setIsPaused(false);
-        setIsPlotting(false);
-        setIsTestActive(false);
+        resetPlayPauseUIState();
         await stopCsvLogging();
-        // ── 3-Point: Clear multi-peak chart data ─────────────────────────────
-        setPeakSeries([]);
-        setBarSlots([]);
-        currentCycleStepIdxRef.current  = 0;
-        isTestRunningRef.current        = false;
-        resetCycleTracking();
         resetSafetyTracking();
         console.log("🔄 RESET command sent to PLC");
       } else {
@@ -660,10 +690,14 @@ const ProcessModeThreePoint = () => {
 
   const handleForceLimitReset = async () => {
     try {
-      await window.api.reset3Point();
-      setShowForceLimitModal(false);
-      setHasAcknowledgedForceLimit(true);
-      console.log("Force limit Reset: COIL_3RESET turned ON");
+      const res = await window.api.reset3Point();
+      if (res?.success) {
+        clearChartsAndAxes();
+        resetPlayPauseUIState();
+        setShowForceLimitModal(false);
+        setHasAcknowledgedForceLimit(true);
+        console.log("Force limit Reset: COIL_3RESET turned ON");
+      }
     } catch (e) {
       console.error("Error writing 3RESET after force limit:", e);
     }
@@ -671,10 +705,14 @@ const ProcessModeThreePoint = () => {
 
   const handleNoForceReset = async () => {
     try {
-      await window.api.reset3Point();
-      setShowNoForceModal(false);
-      setHasAcknowledgedNoForce(true);
-      console.log("No force Reset: COIL_3RESET turned ON");
+      const res = await window.api.reset3Point();
+      if (res?.success) {
+        clearChartsAndAxes();
+        resetPlayPauseUIState();
+        setShowNoForceModal(false);
+        setHasAcknowledgedNoForce(true);
+        console.log("No force Reset: COIL_3RESET turned ON");
+      }
     } catch (e) {
       console.error("Error writing 3RESET after no force:", e);
     }
@@ -1140,7 +1178,12 @@ const ProcessModeThreePoint = () => {
               )}
             </div>
             <div className="flex-1 min-h-0" style={{ minHeight: "140px" }}>
-              <Line data={multiPeakChartConfig} options={multiPeakChartOptions} redraw={false} />
+              <Line
+                key={chartSessionKey}
+                data={multiPeakChartConfig}
+                options={multiPeakChartOptions}
+                redraw={false}
+              />
             </div>
           </div>
 
@@ -1173,7 +1216,7 @@ const ProcessModeThreePoint = () => {
                 </div>
               ) : (
                 <Bar
-                  key={completedBars.map((b) => `${b.horizontalMm}-${b.maxForce}`).join("-")}
+                  key={chartSessionKey}
                   data={barChartConfig}
                   options={barChartOptions}
                 />
