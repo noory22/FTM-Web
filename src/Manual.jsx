@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Power, Usb, Move, TrendingUp, ChevronUp, ChevronDown, ChevronRight, ChevronLeft, AlertTriangle, Home, Scale, Ruler, Activity, MoveHorizontal } from 'lucide-react';
 import { Line } from 'react-chartjs-2';
@@ -33,6 +33,53 @@ const Manual = () => {
   const movementTimeoutRef = useRef(null);
   const probeIntervalRef = useRef(null);
   const activationDoneRef = useRef(false);
+
+  // ── Plugin refs — updated each render, read by the stable plugin ─────────────
+  const pluginDistRef  = useRef(NaN);
+  const pluginColorRef = useRef('#3b82f6');
+
+  // Stable plugin object — created ONCE so react-chartjs-2 never gets ID conflicts
+  const stoppedPositionPlugin = useMemo(() => ({
+    id: 'manualPositionDot',
+    afterDraw(chart) {
+      const dist  = pluginDistRef.current;
+      const color = pluginColorRef.current;
+      if (isNaN(dist) || !isFinite(dist)) return;
+
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea || !scales.x) return;
+
+      const xPixel = scales.x.getPixelForValue(dist);
+      if (xPixel < chartArea.left || xPixel > chartArea.right) return;
+
+      const yPixel = chartArea.bottom;
+      const radius = 7;
+
+      ctx.save();
+
+      // White halo for contrast
+      ctx.beginPath();
+      ctx.arc(xPixel, yPixel, radius + 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      // Coloured filled dot
+      ctx.beginPath();
+      ctx.arc(xPixel, yPixel, radius, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      // Thin coloured border ring
+      ctx.beginPath();
+      ctx.arc(xPixel, yPixel, radius + 3, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.restore();
+    },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), []); // [] = created once, reads live data via refs
 
   const [force, setForce] = useState('--');
   const [probeDistance, setProbeDistance] = useState('--');
@@ -69,7 +116,17 @@ const Manual = () => {
     animation: { duration: 0 },
     interaction: { intersect: false, mode: 'index' },
     plugins: {
-      legend: { display: false },
+      legend: { 
+        display: true,
+        position: 'top',
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'circle',
+          padding: 20,
+          font: { weight: 'bold', size: 12 },
+          color: '#333'
+        }
+      },
       tooltip: {
         mode: 'index',
         intersect: false,
@@ -80,16 +137,25 @@ const Manual = () => {
         borderWidth: 1,
         cornerRadius: 8,
         padding: 12,
-        displayColors: false,
+        displayColors: true,
         callbacks: {
-          label: ctx => `Force: ${ctx.parsed.y.toFixed(2)} mN`,
-          title: ctx => `Probe Dist: ${ctx[0].parsed.x.toFixed(2)} mm`,
+          label: function(context) {
+            const label = context.dataset.label || '';
+            const force = context.parsed.y.toFixed(2);
+            return `${label}: ${force} mN`;
+          },
+          title: function(context) {
+            const distance = context[0].parsed.x.toFixed(2);
+            const direction = context[0].dataset.label || '';
+            return `${direction} - Distance: ${distance} mm`;
+          },
         },
       },
     },
     scales: {
       x: {
         type: 'linear',
+        min: 0,  // ← Add this line
         title: {
           display: true,
           text: 'Vertical Distance (mm)',
@@ -112,7 +178,7 @@ const Manual = () => {
       },
     },
     elements: {
-      line: { tension: 0, borderWidth: 2.5, fill: false },
+      line: { tension: 0, fill: false },
       point: { radius: 0, hoverRadius: 5 },
     },
   };
@@ -120,7 +186,7 @@ const Manual = () => {
   const chartConfig = {
     datasets: [
       {
-        label: 'Probe Down',
+        label: 'Probe Down ↓',
         data: forwardData.map(p => ({ x: p.probeDistance, y: p.force })),
         borderColor: '#3b82f6',
         backgroundColor: 'rgba(59,130,246,0.1)',
@@ -129,9 +195,18 @@ const Manual = () => {
         pointBorderColor: '#fff',
         pointHoverBackgroundColor: '#fff',
         pointHoverBorderColor: '#3b82f6',
+        borderWidth: probeDown ? 5 : (probeUp ? 2 : 3),
+        pointRadius: (context) => {
+          if (!probeDown) return 0;
+          const index = context.dataIndex;
+          const count = context.dataset.data.length;
+          return index === count - 1 ? 6 : 3;
+        },
+        pointHoverRadius: 5,
+        order: probeDown ? 2 : 1,
       },
       {
-        label: 'Probe Up',
+        label: 'Probe Up ↑',
         data: backwardData.map(p => ({ x: p.probeDistance, y: p.force })),
         borderColor: '#ef4444',
         backgroundColor: 'rgba(239,68,68,0.1)',
@@ -140,6 +215,15 @@ const Manual = () => {
         pointBorderColor: '#fff',
         pointHoverBackgroundColor: '#fff',
         pointHoverBorderColor: '#ef4444',
+        borderWidth: probeUp ? 5 : (probeDown ? 2 : 3),
+        pointRadius: (context) => {
+          if (!probeUp) return 0;
+          const index = context.dataIndex;
+          const count = context.dataset.data.length;
+          return index === count - 1 ? 6 : 3;
+        },
+        pointHoverRadius: 5,
+        order: probeUp ? 2 : 1,
       },
     ],
   };
@@ -486,13 +570,25 @@ const Manual = () => {
             }
 
             setGraphData(prev => {
+              // ── Do NOT plot during homing — clear and block new points ──
+              if (data.machineStatus === 2) return [];
+
               const x = Number(data.distance);
               const y = Number(data.force_mN);
               if (isNaN(x) || isNaN(y)) return prev;
               let direction = 'forward';
               if (prev.length > 0) {
-                const lastX = prev[prev.length - 1].probeDistance;
-                direction = x < lastX ? 'backward' : 'forward';
+                const lastDir = prev[prev.length - 1].direction;
+                const isProbeDown = data.probeDown !== undefined ? Boolean(data.probeDown) : false;
+                const isProbeUp = data.probeUp !== undefined ? Boolean(data.probeUp) : false;
+
+                if (isProbeDown) {
+                  direction = 'forward';
+                } else if (isProbeUp) {
+                  direction = 'backward';
+                } else {
+                  direction = lastDir;
+                }
               }
               const updated = [...prev, { probeDistance: x, force: y, direction }];
               return updated.length > 200 ? updated.slice(updated.length - 200) : updated;
@@ -587,6 +683,17 @@ const Manual = () => {
     </div>
   );
 
+  // Update plugin refs synchronously before every paint
+  const currentDist  = Number(probeDistance);
+  const lastDirection = graphData.length > 0 ? graphData[graphData.length - 1].direction : 'forward';
+  const activeDotColor = probeDown
+    ? '#3b82f6'
+    : probeUp
+      ? '#ef4444'
+      : lastDirection === 'backward' ? '#ef4444' : '#3b82f6';
+  pluginDistRef.current  = currentDist;
+  pluginColorRef.current = activeDotColor;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-6 overflow-hidden">
       <div className="w-full mx-auto h-full flex flex-col" style={{ maxHeight: 'calc(100vh - 48px)' }}>
@@ -650,18 +757,18 @@ const Manual = () => {
                   </div>
                   <div className="flex items-center space-x-3 sm:space-x-5 bg-slate-50/50 px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border border-slate-100 shadow-sm flex-shrink-0">
                     <div className="flex items-center space-x-2">
-                      <div className="w-8 h-1 bg-blue-500 rounded-full" />
+                      <div className="w-8 h-2 bg-blue-500 rounded-full" />
                       <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Probe Down</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <div className="w-8 h-1 bg-red-500 rounded-full" />
+                      <div className="w-8 h-3 bg-red-500 rounded-full" />
                       <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Probe Up</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex-1 w-full min-h-0">
-                  <Line data={chartConfig} options={chartOptions} redraw={false} />
+                  <Line data={chartConfig} options={chartOptions} plugins={[stoppedPositionPlugin]} redraw={false} updateMode="none" />
                 </div>
               </div>
             </div>

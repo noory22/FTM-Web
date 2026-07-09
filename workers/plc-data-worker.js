@@ -515,7 +515,7 @@ async function processModbusLoop() {
 
       try {
         const mdRes = await client.readHoldingRegisters(REG_MANUAL_DISTANCE, 1);
-        const rawCath = mdRes.data[0];
+        const rawCath = toSigned16(mdRes.data[0]);
         plcState.catheterDistance = rawCath / 10.0;
         if (Date.now() - (plcState._cathLogTime || 0) > 5000) {
           console.log(`📊 REG_CATHETER(R71) raw: ${rawCath} mm,converted:${rawCath / 10}mm`);
