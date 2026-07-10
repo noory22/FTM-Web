@@ -416,7 +416,7 @@ const ProcessModeThreePoint = () => {
         if (isStarting && status !== "READY" && status !== "IDLE") {
           setIsStarting(false);
         }
-        if (isResuming && (status === "RUNNING" || status === "SEARCHING CONTACT")) {
+        if (isResuming && (status === "RUNNING" || status === "SEARCHING CONTACT" || status === "CATHETER MOVEMENT")) {
           setIsResuming(false);
         }
         if (isResetting && (status === "HOMING" || status === "READY" || status === "IDLE")) {

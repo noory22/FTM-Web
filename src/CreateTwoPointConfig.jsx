@@ -58,14 +58,17 @@ const CreateTwoPointConfig = () => {
     const { name, value } = e.target;
 
     if (name === 'configName') {
+      // Allow only alphanumeric + spaces, max 30 chars
       if (!/^[a-zA-Z0-9 ]*$/.test(value) || value.length > 30) {
         return;
       }
     } else {
-      if (value.startsWith('-') || value.startsWith('0') && !value.includes('.') || /[eE]/.test(value)) {
-        if (value !== '0.') return;
+      // Numeric fields: only positive integers allowed (no decimals, no negatives, no special chars)
+      if (!/^\d*$/.test(value)) {
+        return;
       }
-      if (!/^\d*\.?\d*$/.test(value)) {
+      // Block leading zeros (e.g. "05")
+      if (value.length > 1 && value.startsWith('0')) {
         return;
       }
     }
@@ -77,7 +80,7 @@ const CreateTwoPointConfig = () => {
 
     if (successMessage) setSuccessMessage('');
 
-    // Live cross-field distance validation
+    // Live cross-field distance values
     const newDist = name === 'catheterToLoadCellDistance' ? value : formData.catheterToLoadCellDistance;
     const newProbe = name === 'probeTravelLimit' ? value : formData.probeTravelLimit;
     const d = parseFloat(newDist);
@@ -86,33 +89,64 @@ const CreateTwoPointConfig = () => {
     setErrors(prev => {
       const next = { ...prev };
 
-      // Validate load cell distance upper bound
+      // ── Catheter to Load Cell Distance: 1–55 mm ──────────────────────────
       if (name === 'catheterToLoadCellDistance') {
-        if (!isNaN(d) && d > 55) {
-          next.catheterToLoadCellDistance = 'Value cannot exceed 55 mm';
+        if (value !== '' && !isNaN(d)) {
+          if (d > 55) {
+            next.catheterToLoadCellDistance = 'Value cannot exceed 55 mm';
+          } else {
+            delete next.catheterToLoadCellDistance;
+          }
         } else {
           delete next.catheterToLoadCellDistance;
         }
-      } else if (name !== 'configName') {
-        // Clear single-field error for other numeric fields as user corrects them
-        if (next[name] && !next[name].includes('cannot exceed')) delete next[name];
       }
 
-      // Validate probe travel limit against dynamic max
+      // ── Force Limit: 10–25000 mN ──────────────────────────────────────────
+      if (name === 'forceLimit') {
+        const v = parseFloat(value);
+        if (value !== '' && !isNaN(v)) {
+          if (v < 10) {
+            next.forceLimit = 'Value must be at least 10 mN';
+          } else if (v > 25000) {
+            next.forceLimit = 'Value cannot exceed 25000 mN';
+          } else {
+            delete next.forceLimit;
+          }
+        } else {
+          delete next.forceLimit;
+        }
+      }
+
+      // ── Test Speed: 1–10 mm/s ─────────────────────────────────────────────
+      if (name === 'testSpeed') {
+        const v = parseFloat(value);
+        if (value !== '' && !isNaN(v)) {
+          if (v < 1) {
+            next.testSpeed = 'Value must be at least 1 mm/s';
+          } else if (v > 10) {
+            next.testSpeed = 'Value cannot exceed 10 mm/s';
+          } else {
+            delete next.testSpeed;
+          }
+        } else {
+          delete next.testSpeed;
+        }
+      }
+
+      // ── Probe Travel Limit: dynamic max = 55 − catheterToLoadCellDistance ─
       if (!isNaN(d) && d > 0) {
         const maxProbe = Math.max(0, 55 - d);
         if (!isNaN(p) && p > 0) {
           if (p > maxProbe) {
             next.probeTravelLimit = `Value cannot exceed ${maxProbe} mm (55 − ${d})`;
           } else {
-            // Only clear if the current error is the dynamic-range one
             if (next.probeTravelLimit?.includes('cannot exceed')) delete next.probeTravelLimit;
           }
         } else if (name === 'probeTravelLimit' && value === '') {
           delete next.probeTravelLimit;
         }
       } else if (name === 'catheterToLoadCellDistance' && (isNaN(d) || d <= 0)) {
-        // Load cell cleared — clear any dynamic probe error
         if (next.probeTravelLimit?.includes('cannot exceed')) delete next.probeTravelLimit;
       }
 
@@ -270,7 +304,7 @@ const CreateTwoPointConfig = () => {
                     name="testSpeed"
                     value={formData.testSpeed}
                     onChange={handleInputChange}
-                    placeholder="Enter Test Speed"
+                    placeholder="Enter Test Speed (1-10)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.testSpeed ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.testSpeed && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.testSpeed}</span></p>}

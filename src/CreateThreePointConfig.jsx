@@ -9,9 +9,9 @@ const getMeasurementIntervalFactors = (num) => {
   const intNum = Math.floor(num);
   for (let i = 1; i <= Math.sqrt(intNum); i++) {
     if (intNum % i === 0) {
-      if (i <= 100) factors.push(i);
+      if (i <= 50) factors.push(i);
       const pair = intNum / i;
-      if (pair !== i && pair <= 100) {
+      if (pair !== i && pair <= 50) {
         factors.push(pair);
       }
     }
@@ -71,15 +71,15 @@ const CreateThreePointConfig = () => {
 
     if (!isNaN(tl) && tl > 0) {
       if (!isNaN(mi) && mi > 0) {
-        if (mi > 100) {
-          newErrors.measurementInterval = 'Value must be in the range (0 - 100) mm';
+        if (mi > 50) {
+          newErrors.measurementInterval = 'Value must be in the range (0 - 50) mm';
         } else {
           const ratio = tl / mi;
           const isPerfectDivisor = Math.abs(ratio - Math.round(ratio)) < 1e-9;
           if (!isPerfectDivisor) {
             const factors = getMeasurementIntervalFactors(tl);
             const factorMsg = factors.length > 0 ? `. Valid intervals: ${factors.join(', ')}` : '';
-            newErrors.measurementInterval = `Measurement interval must perfectly divide the Test Length. Range: (0 - 100)${factorMsg}`;
+            newErrors.measurementInterval = `Measurement interval must perfectly divide the Test Length. Range: (0 - 50)${factorMsg}`;
           }
         }
       }
@@ -108,14 +108,17 @@ const CreateThreePointConfig = () => {
     const { name, value } = e.target;
 
     if (name === 'configName') {
+      // Allow only alphanumeric + spaces, max 30 chars
       if (!/^[a-zA-Z0-9 ]*$/.test(value) || value.length > 30) {
         return;
       }
     } else {
-      if (value.startsWith('-') || value.startsWith('0') && !value.includes('.') || /[eE]/.test(value)) {
-        if (value !== '0.') return;
+      // Numeric fields: only positive integers allowed (no decimals, no negatives, no special chars)
+      if (!/^\d*$/.test(value)) {
+        return;
       }
-      if (!/^\d*\.?\d*$/.test(value)) {
+      // Block leading zeros (e.g. "05")
+      if (value.length > 1 && value.startsWith('0')) {
         return;
       }
     }
@@ -127,13 +130,13 @@ const CreateThreePointConfig = () => {
 
     if (successMessage) setSuccessMessage('');
 
-    // Live cross-field distance validation
+    // Live cross-field distance values
     const newDist = name === 'catheterDist' ? value : formData.catheterDist;
     const newProbe = name === 'probeTravelLimit' ? value : formData.probeTravelLimit;
     const d = parseFloat(newDist);
     const p = parseFloat(newProbe);
 
-    // Live test length and measurement interval validation
+    // Live test length and measurement interval values
     const newTestLength = name === 'testLength' ? value : formData.testLength;
     const newInterval = name === 'measurementInterval' ? value : formData.measurementInterval;
     const tl = parseFloat(newTestLength);
@@ -142,52 +145,97 @@ const CreateThreePointConfig = () => {
     setErrors(prev => {
       const next = { ...prev };
 
-      // Validate catheter dist upper bound
+      // ── Catheter Dist: 1–55 mm ────────────────────────────────────────────
       if (name === 'catheterDist') {
-        if (!isNaN(d) && d > 55) {
-          next.catheterDist = 'Value cannot exceed 55 mm';
+        if (value !== '' && !isNaN(d)) {
+          if (d > 55) {
+            next.catheterDist = 'Value cannot exceed 55 mm';
+          } else {
+            delete next.catheterDist;
+          }
         } else {
           delete next.catheterDist;
         }
-      } else if (name !== 'configName') {
-        // Clear single-field error for other numeric fields as user corrects them
-        if (next[name] && 
-            !next[name].includes('cannot exceed') &&
-            !next[name].includes('perfectly divide') &&
-            !next[name].includes('Range: (0 - 100)') &&
-            !next[name].includes('valid Test Length')) {
-          delete next[name];
+      }
+
+      // ── Test Length: 1–5000 mm ────────────────────────────────────────────
+      if (name === 'testLength') {
+        if (value !== '' && !isNaN(tl)) {
+          if (tl > 5000) {
+            next.testLength = 'Value cannot exceed 5000 mm';
+          } else {
+            delete next.testLength;
+          }
+        } else {
+          delete next.testLength;
         }
       }
 
-      // Validate probe travel limit against dynamic max
+      // ── Force Limit: 10–25000 mN ──────────────────────────────────────────
+      if (name === 'forceLimit') {
+        const v = parseFloat(value);
+        if (value !== '' && !isNaN(v)) {
+          if (v < 10) {
+            next.forceLimit = 'Value must be at least 10 mN';
+          } else if (v > 25000) {
+            next.forceLimit = 'Value cannot exceed 25000 mN';
+          } else {
+            delete next.forceLimit;
+          }
+        } else {
+          delete next.forceLimit;
+        }
+      }
+
+      // ── Test Speed: 1–10 mm/s ─────────────────────────────────────────────
+      if (name === 'testSpeed') {
+        const v = parseFloat(value);
+        if (value !== '' && !isNaN(v)) {
+          if (v < 1) {
+            next.testSpeed = 'Value must be at least 1 mm/s';
+          } else if (v > 10) {
+            next.testSpeed = 'Value cannot exceed 10 mm/s';
+          } else {
+            delete next.testSpeed;
+          }
+        } else {
+          delete next.testSpeed;
+        }
+      }
+
+      // ── Horizontal Speed: 1–10 mm/s ───────────────────────────────────────
+      if (name === 'horizontalSpeed') {
+        const v = parseFloat(value);
+        if (value !== '' && !isNaN(v)) {
+          if (v < 1) {
+            next.horizontalSpeed = 'Value must be at least 1 mm/s';
+          } else if (v > 10) {
+            next.horizontalSpeed = 'Value cannot exceed 10 mm/s';
+          } else {
+            delete next.horizontalSpeed;
+          }
+        } else {
+          delete next.horizontalSpeed;
+        }
+      }
+
+      // ── Probe Travel Limit: dynamic max = 55 − catheterDist ───────────────
       if (!isNaN(d) && d > 0) {
         const maxProbe = Math.max(0, 55 - d);
         if (!isNaN(p) && p > 0) {
           if (p > maxProbe) {
             next.probeTravelLimit = `Value cannot exceed ${maxProbe} mm (55 − ${d})`;
           } else {
-            // Only clear if the current error is the dynamic-range one
             if (next.probeTravelLimit?.includes('cannot exceed')) delete next.probeTravelLimit;
           }
         } else if (name === 'probeTravelLimit' && value === '') {
           delete next.probeTravelLimit;
         }
       } else if (name === 'catheterDist' && (isNaN(d) || d <= 0)) {
-        // Catheter dist cleared — clear any dynamic probe error
         if (next.probeTravelLimit?.includes('cannot exceed')) delete next.probeTravelLimit;
       }
 
-      // Validate testLength upper bound
-      if (name === 'testLength') {
-        if (!isNaN(tl) && tl > 5000) {
-          next.testLength = 'Value cannot exceed 5000 mm';
-        } else {
-          delete next.testLength;
-        }
-      }
-
-      // Validate measurementInterval against testLength
+      // ── Measurement Interval: 1–100 mm, must perfectly divide testLength ──
       if (!isNaN(tl) && tl > 0) {
         if (!isNaN(mi) && mi > 0) {
           if (mi > 100) {
@@ -350,7 +398,7 @@ const CreateThreePointConfig = () => {
                     name="measurementInterval"
                     value={formData.measurementInterval}
                     onChange={handleInputChange}
-                    placeholder="Enter Measurement Intervals (0-100)"
+                    placeholder="Enter Measurement Intervals (0-50)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.measurementInterval ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.measurementInterval && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.measurementInterval}</span></p>}
@@ -403,7 +451,7 @@ const CreateThreePointConfig = () => {
                     name="testSpeed"
                     value={formData.testSpeed}
                     onChange={handleInputChange}
-                    placeholder="Enter Test Speed"
+                    placeholder="Enter Test Speed (1-10)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.testSpeed ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.testSpeed && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.testSpeed}</span></p>}
@@ -417,7 +465,7 @@ const CreateThreePointConfig = () => {
                     name="horizontalSpeed"
                     value={formData.horizontalSpeed}
                     onChange={handleInputChange}
-                    placeholder="Enter Horizontal Speed"
+                    placeholder="Enter Horizontal Speed (1-10)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.horizontalSpeed ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.horizontalSpeed && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.horizontalSpeed}</span></p>}
