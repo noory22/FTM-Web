@@ -590,6 +590,7 @@ const ProcessModeThreePoint = () => {
 
   // ── Button handlers ───────────────────────────────────────────────────────────
   const handleStart = async () => {
+    if (isStarting || isTestActive) return;
     setIsStarting(true);
     isTestRunningRef.current = true;
     resetSafetyTracking();
@@ -622,6 +623,7 @@ const ProcessModeThreePoint = () => {
   };
 
   const handlePause = async () => {
+    if (isPausing || isPaused) return;
     setIsPausing(true);
     setIsPaused(true);
     try {
@@ -642,6 +644,7 @@ const ProcessModeThreePoint = () => {
   };
 
   const handleResume = async () => {
+    if (isResuming || !isPaused) return;
     setIsResuming(true);
     setIsPaused(false);
     setIsPausing(false);
@@ -663,6 +666,7 @@ const ProcessModeThreePoint = () => {
   };
 
   const handleReset = async () => {
+    if (isResetting) return;
     setIsResetting(true);
     try {
       const res = await window.api.reset3Point();
@@ -734,13 +738,15 @@ const ProcessModeThreePoint = () => {
                    isTestActive &&
                    !isPausedUI &&
                    !isPausing &&
-                   !isResetting;
+                   !isResetting &&
+                   currentStatus !== "HOMING";
 
   const canResume = isConnected &&
                     isTestActive &&
                     isPausedUI &&
                     !isResuming &&
-                    !isResetting;
+                    !isResetting &&
+                    currentStatus !== "HOMING";
 
   const playPauseMode = isPausedUI
     ? 'resume'

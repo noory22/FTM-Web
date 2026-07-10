@@ -1410,7 +1410,7 @@ ipcMain.handle("stop", async () => {
   return await safeExecute("STOP", async () => {
     if (!isConnected) throw new Error("Modbus not connected");
 
-    await client.writeCoil(COIL_START, false);
+    // await client.writeCoil(COIL_START, false);
     await client.writeCoil(COIL_STOP, true);
 
     return { success: true };
@@ -1448,7 +1448,7 @@ ipcMain.handle("stop-3point", async () => {
   return await safeExecute("STOP_3POINT", async () => {
     if (!isConnected) throw new Error("Modbus not connected");
 
-    await client.writeCoil(COIL_3START, false);
+    // await client.writeCoil(COIL_3START, false);
     await client.writeCoil(COIL_3STOP, true);
 
     return { success: true };

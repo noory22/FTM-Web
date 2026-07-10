@@ -446,6 +446,7 @@ const ProcessModeTwoPoint = () => {
 
   // ── Button handlers ───────────────────────────────────────────────────────────
   const handleStart = async () => {
+    if (isStarting || isPlotting) return;
     setIsStarting(true);
     setIsPlotting(true);
     try {
@@ -466,6 +467,7 @@ const ProcessModeTwoPoint = () => {
   };
 
   const handlePause = async () => {
+    if (isPausing || isPaused) return;
     setIsPausing(true);
     setIsPaused(true);
     try {
@@ -486,6 +488,7 @@ const ProcessModeTwoPoint = () => {
   };
 
   const handleResume = async () => {
+    if (isResuming || !isPaused) return;
     setIsResuming(true);
     setIsPaused(false);
     setIsPausing(false);
@@ -506,6 +509,7 @@ const ProcessModeTwoPoint = () => {
   };
 
   const handleReset = async () => {
+    if (isResetting) return;
     setIsResetting(true);
     try {
       const res = await window.api.reset();
