@@ -51,6 +51,16 @@ const AppShell = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const userRole = 'admin';
+  const isSidebarLocked = useMemo(() => {
+    const path = location.pathname;
+    return (
+      path === '/process-mode/2-point' ||
+      path === '/process-mode/3-point' ||
+      path === '/manual-mode' ||
+      path === '/settings'
+    );
+  }, [location.pathname]);
+
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showPowerDropdown, setShowPowerDropdown] = useState(false);
@@ -312,7 +322,7 @@ const AppShell = () => {
     const hasChildren = Boolean(item.children?.length);
     const isOpen = openMenus[key] || itemHasActivePath(item);
     const isActive = item.path === currentPath || item.path === location.pathname;
-    const disabled = emergencyActive && item.blockedByEmergency;
+    const disabled = (emergencyActive && item.blockedByEmergency) || isSidebarLocked;
     const collapsedPadding = sidebarCollapsed ? 'justify-center px-0' : '';
     const collapsedTextHidden = sidebarCollapsed ? 'hidden' : '';
 
@@ -322,14 +332,15 @@ const AppShell = () => {
           type="button"
           onClick={() => handleNavClick(item)}
           disabled={disabled}
-          className={`flex min-h-11 w-full items-center gap-3 rounded-lg py-2.5 text-left text-sm font-medium transition-colors ${disabled
-            ? 'cursor-not-allowed text-slate-500'
-            : isActive
-              ? 'bg-blue-600 text-white shadow-lg shadow-blue-950/30'
+          className={`flex min-h-11 w-full items-center gap-3 rounded-lg py-2.5 text-left text-sm font-medium transition-colors ${
+            isActive
+              ? `bg-blue-600 text-white shadow-lg shadow-blue-950/30 ${disabled ? 'opacity-80' : ''}`
               : itemHasActivePath(item)
-                ? 'bg-white/10 text-white'
-                : 'text-slate-200 hover:bg-white/10 hover:text-white'
-            } ${collapsedPadding}`}
+                ? `bg-white/10 text-white ${disabled ? 'opacity-80' : ''}`
+                : disabled
+                  ? 'text-slate-500'
+                  : 'text-slate-200 hover:bg-white/10 hover:text-white'
+            } ${disabled ? 'cursor-not-allowed' : ''} ${collapsedPadding}`}
           style={{ paddingLeft: sidebarCollapsed ? '0' : `${12 + depth * 18}px` }}
           title={sidebarCollapsed ? item.label : ''}
         >
@@ -444,7 +455,12 @@ const AppShell = () => {
             <div className="border-t border-white/10 p-3">
               <button
                 onClick={handleUpdateCheck}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-200 hover:bg-white/10 hover:text-white ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
+                disabled={isSidebarLocked}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                  isSidebarLocked
+                    ? 'cursor-not-allowed text-slate-500'
+                    : 'text-slate-200 hover:bg-white/10 hover:text-white'
+                } ${sidebarCollapsed ? 'justify-center px-0' : ''}`}
                 title={sidebarCollapsed ? "Check for Updates" : ""}
               >
                 <RefreshCw className="h-5 w-5 shrink-0" />
@@ -466,8 +482,11 @@ const AppShell = () => {
           <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 px-4 py-5 shadow-sm backdrop-blur lg:px-8">
             <div className="flex items-center gap-4">
               <button
-                className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-50 lg:hidden"
+                className={`rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-50 lg:hidden transition-all duration-200 ${
+                  isSidebarLocked ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''
+                }`}
                 onClick={() => setSidebarOpen(true)}
+                disabled={isSidebarLocked}
               >
                 <Menu className="h-5 w-5" />
               </button>

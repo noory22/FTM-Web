@@ -349,32 +349,6 @@ const ProcessLogs = () => {
 
     >
       <div className="w-full mx-auto">
-        {/* Header */}
-        <div className="flex items-center justify-end mb-8">
-          <div className="flex items-center space-x-2 lg:space-x-3">
-            {/* Help Button */}
-            <button
-              onClick={() => setShowHelpModal(true)}
-              className="group bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white rounded-xl lg:rounded-2xl w-10 h-10 sm:w-12 sm:h-12 lg:w-14 lg:h-14 flex items-center justify-center transition-all duration-300 hover:-translate-y-1 shadow-lg hover:shadow-xl border border-blue-400/30"
-            >
-              <Info className="w-4 h-4 sm:w-5 sm:h-5 lg:w-6 lg:h-6 group-hover:scale-110 transition-transform duration-300" />
-            </button>
-            <button
-              onClick={() => {
-                const confirmed = window.confirm(
-                  "Are you sure you want to exit?"
-                );
-                if (confirmed) {
-                  window.close();
-                }
-              }}
-              className="group bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white rounded-xl lg:rounded-2xl w-8 h-8 sm:w-12 sm:h-12 lg:w-14 lg:h-14 flex items-center justify-center transition-all duration-300 hover:-translate-y-1 shadow-lg hover:shadow-xl border border-red-400/30 flex-shrink-0"
-            >
-              <Power className="w-3 h-3 sm:w-5 sm:h-5 lg:w-6 lg:h-6 group-hover:scale-110 transition-transform duration-300" />
-            </button>
-          </div>
-        </div>
-
         {/* Main Content */}
         {/* <div className="grid grid-cols-1 xl:grid-cols-4 gap-6"> */}
         {/* <div className="grid grid-cols-1 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4 h-[calc(100vh-100px)]"> */}
