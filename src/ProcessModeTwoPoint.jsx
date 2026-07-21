@@ -114,6 +114,9 @@ const ProcessModeTwoPoint = () => {
   const hasAcknowledgedForceLimitRef = useRef(false);
   const showNoForceModalRef = useRef(false);
   const hasAcknowledgedNoForceRef = useRef(false);
+  const forceLimitStopTriggeredRef = useRef(false);
+  const noForceStopTriggeredRef = useRef(false);
+  const contactDetectedRef = useRef(false);
 
   const isComponentMounted = useRef(true);
   useEffect(() => {
@@ -291,35 +294,54 @@ const ProcessModeTwoPoint = () => {
           const limitVal = parseFloat(selectedConfig.forceLimit);
           if (!isNaN(limitVal) && force >= limitVal) {
             if (TEST_IN_PROGRESS.has(status) && !showForceLimitModalRef.current && !hasAcknowledgedForceLimitRef.current) {
+              if (!forceLimitStopTriggeredRef.current) {
+                forceLimitStopTriggeredRef.current = true;
+                setIsPaused(true);
+                setIsPausing(false);
+                window.api.stop().catch((e) => {
+                  console.error("Force limit stop error:", e);
+                });
+              }
               setShowForceLimitModal(true);
             }
-          } else {
-            if (hasAcknowledgedForceLimitRef.current) {
-              setHasAcknowledgedForceLimit(false);
-            }
+          } else if (hasAcknowledgedForceLimitRef.current && force < limitVal) {
+            setHasAcknowledgedForceLimit(false);
+            forceLimitStopTriggeredRef.current = false;
           }
+        }
+
+        // Track if force was ever detected during the active test
+        if (isPlotting && force !== null && force > 10.0) {
+          contactDetectedRef.current = true;
         }
 
         // ── Check No Force Detected ──────────────────────────────────────────
         if (
-          status === "SEARCHING CONTACT" &&
+          isPlotting &&
+          !contactDetectedRef.current &&
           selectedConfig &&
           selectedConfig.probeTravelLimit !== undefined &&
           selectedConfig.probeTravelLimit !== null &&
           probeDistance !== null &&
-          force !== null
+          !showForceLimitModalRef.current
         ) {
           const travelLimit = parseFloat(selectedConfig.probeTravelLimit);
-          if (!isNaN(travelLimit) && probeDistance >= travelLimit && force <= 0.1) {
+          if (!isNaN(travelLimit) && probeDistance >= (travelLimit - 0.5)) {
             if (!showNoForceModalRef.current && !hasAcknowledgedNoForceRef.current) {
+              if (!noForceStopTriggeredRef.current) {
+                noForceStopTriggeredRef.current = true;
+                setIsPaused(true);
+                setIsPausing(false);
+                window.api.stop().catch((e) => {
+                  console.error("No force stop error:", e);
+                });
+              }
               setShowNoForceModal(true);
             }
+          } else if (hasAcknowledgedNoForceRef.current) {
+            setHasAcknowledgedNoForce(false);
+            noForceStopTriggeredRef.current = false;
           }
-        }
-
-        // Reset the latch when machine status is no longer SEARCHING CONTACT
-        if (status !== "SEARCHING CONTACT" && hasAcknowledgedNoForceRef.current) {
-          setHasAcknowledgedNoForce(false);
         }
 
 
@@ -449,6 +471,16 @@ const ProcessModeTwoPoint = () => {
     if (isStarting || isPlotting) return;
     setIsStarting(true);
     setIsPlotting(true);
+
+    // Reset safety flags
+    forceLimitStopTriggeredRef.current = false;
+    noForceStopTriggeredRef.current = false;
+    contactDetectedRef.current = false;
+    setHasAcknowledgedForceLimit(false);
+    setHasAcknowledgedNoForce(false);
+    setShowForceLimitModal(false);
+    setShowNoForceModal(false);
+
     try {
       const res = await window.api.start();
       if (res?.success) {
@@ -524,6 +556,9 @@ const ProcessModeTwoPoint = () => {
           setCompletedTimer(null);
         }
         await stopCsvLogging();
+        forceLimitStopTriggeredRef.current = false;
+        noForceStopTriggeredRef.current = false;
+        contactDetectedRef.current = false;
         setShowForceLimitModal(false);
         setHasAcknowledgedForceLimit(false);
         setShowNoForceModal(false);
@@ -542,7 +577,7 @@ const ProcessModeTwoPoint = () => {
 
   const handleForceLimitReset = async () => {
     try {
-      await window.api.writeCoilM303(true);
+      await window.api.reset();
       setShowForceLimitModal(false);
       setHasAcknowledgedForceLimit(true);
       console.log("✅ Force Limit Reset clicked: wrote M303=true and closed dialog");
@@ -551,10 +586,32 @@ const ProcessModeTwoPoint = () => {
     }
   };
 
-  const handleNoForceOk = () => {
-    setShowNoForceModal(false);
-    setHasAcknowledgedNoForce(true);
-    console.log("✅ No Force Ok clicked: closed dialog");
+  const handleNoForceReset = async () => {
+    try {
+      const res = await window.api.reset();
+      if (res?.success) {
+        setChartData([]);
+        lastLogRef.current = { distance: null, force: null };
+        setIsPaused(false);
+        setIsPlotting(false);
+        setIsTestCompleted(false);
+        if (completedTimer) {
+          clearTimeout(completedTimer);
+          setCompletedTimer(null);
+        }
+        await stopCsvLogging();
+        forceLimitStopTriggeredRef.current = false;
+        noForceStopTriggeredRef.current = false;
+        contactDetectedRef.current = false;
+        setShowForceLimitModal(false);
+        setHasAcknowledgedForceLimit(false);
+        setShowNoForceModal(false);
+        setHasAcknowledgedNoForce(true);
+        console.log("✅ No Force Reset: reset command sent and closed dialog");
+      }
+    } catch (e) {
+      console.error("Error resetting after no force:", e);
+    }
   };
 
 
@@ -708,10 +765,11 @@ const ProcessModeTwoPoint = () => {
                 </p>
               </div>
               <button
-                onClick={handleNoForceOk}
-                className="w-full bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center space-x-2 text-base cursor-pointer font-medium"
+                onClick={handleNoForceReset}
+                className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white font-bold py-3.5 px-4 rounded-xl shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center space-x-2 text-base cursor-pointer"
               >
-                <span>OK</span>
+                <RotateCcw className="w-5 h-5" />
+                <span>RESET</span>
               </button>
             </div>
           </div>
