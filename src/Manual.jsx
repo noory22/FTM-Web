@@ -374,17 +374,7 @@ const Manual = () => {
     resetHomingState();
     
     try {
-      const result = await window.api.probeDown();
-      if (result.success) {
-        setProbeDown(true);
-        setProbeUp(false);
-        probeIntervalRef.current = setInterval(async () => {
-          if (probeDown) await window.api.probeDown();
-        }, 500);
-        movementTimeoutRef.current = setTimeout(async () => {
-          await handleProbeStop();
-        }, 5000);
-      }
+      await window.api.probeDown(true);
     } catch (error) {
       console.error("Probe down error:", error);
     }
@@ -399,17 +389,7 @@ const Manual = () => {
     resetHomingState();
     
     try {
-      const result = await window.api.probeUp();
-      if (result.success) {
-        setProbeUp(true);
-        setProbeDown(false);
-        probeIntervalRef.current = setInterval(async () => {
-          if (probeUp) await window.api.probeUp();
-        }, 500);
-        movementTimeoutRef.current = setTimeout(async () => {
-          await handleProbeStop();
-        }, 5000);
-      }
+      await window.api.probeUp(true);
     } catch (error) {
       console.error("Probe up error:", error);
     }
@@ -423,31 +403,22 @@ const Manual = () => {
     }
     try {
       await window.api.probeStop();
-      setProbeDown(false);
-      setProbeUp(false);
     } catch (error) {
       console.error("Probe stop error:", error);
     }
   };
 
-  const handleClampStart = async () => {
+  const handleClampToggle = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
     
     // Reset homing trigger on user interaction
     resetHomingState();
     
     try {
-      await window.api.clampControl(true);
+      const newState = !clamp;
+      await window.api.clampControl(newState);
     } catch (error) {
-      console.error("Clamp start error:", error);
-    }
-  };
-
-  const handleClampStop = async () => {
-    try {
-      await window.api.clampControl(false);
-    } catch (error) {
-      console.error("Clamp stop error:", error);
+      console.error("Clamp toggle error:", error);
     }
   };
 
@@ -917,17 +888,12 @@ const Manual = () => {
                     </span>
                   </div>
 
-                  {/* Clamp Press-and-Hold Button */}
+                  {/* Clamp Toggle Button */}
                   <div className="flex flex-col items-center gap-2">
                     <button
-                      onMouseDown={handleClampStart}
-                      onTouchStart={handleClampStart}
-                      onMouseUp={handleClampStop}
-                      onMouseLeave={handleClampStop}
-                      onTouchEnd={handleClampStop}
-                      onTouchCancel={handleClampStop}
+                      onClick={handleClampToggle}
                       disabled={!controlsEnabled}
-                      className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400
+                      className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400
                         ${clamp
                           ? 'bg-purple-500 border-purple-600 text-white shadow-lg shadow-purple-200'
                           : 'bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100 hover:border-purple-400 hover:shadow-md active:scale-95'}
