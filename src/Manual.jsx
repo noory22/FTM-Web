@@ -430,52 +430,66 @@ const Manual = () => {
     }
   };
 
-  const handleClampToggle = async () => {
+  const handleClampStart = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
     
     // Reset homing trigger on user interaction
     resetHomingState();
     
     try {
-      const newState = !clamp;
-      const result = await window.api.clampControl(newState);
-      if (result.success) setClamp(result.clampState);
+      await window.api.clampControl(true);
     } catch (error) {
-      console.error("Clamp toggle error:", error);
+      console.error("Clamp start error:", error);
     }
   };
 
-  const handleCatheterForward = async () => {
+  const handleClampStop = async () => {
+    try {
+      await window.api.clampControl(false);
+    } catch (error) {
+      console.error("Clamp stop error:", error);
+    }
+  };
+
+  const handleCatheterForwardStart = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
     
     // Reset homing trigger on user interaction
     resetHomingState();
     
     try {
-      const result = await window.api.catheterForward();
-      if (result.success) {
-        setCatheterForward(true);
-        setTimeout(() => setCatheterForward(false), 2000);
-      }
+      await window.api.catheterForward(true);
     } catch (error) {
       console.error("Catheter forward error:", error);
     }
   };
 
-  const handleCatheterBackward = async () => {
+  const handleCatheterForwardStop = async () => {
+    try {
+      await window.api.catheterForward(false);
+    } catch (error) {
+      console.error("Catheter forward stop error:", error);
+    }
+  };
+
+  const handleCatheterBackwardStart = async () => {
     if (!connectionStatus.connected || emergencyActive || !manualModeActive) return;
     
     // Reset homing trigger on user interaction
     resetHomingState();
     
     try {
-      const result = await window.api.catheterBackward();
-      if (result.success) {
-        setCatheterBack(true);
-        setTimeout(() => setCatheterBack(false), 2000);
-      }
+      await window.api.catheterBackward(true);
     } catch (error) {
       console.error("Catheter backward error:", error);
+    }
+  };
+
+  const handleCatheterBackwardStop = async () => {
+    try {
+      await window.api.catheterBackward(false);
+    } catch (error) {
+      console.error("Catheter backward stop error:", error);
     }
   };
 
@@ -776,7 +790,7 @@ const Manual = () => {
           {/* end left column */}
 
           {/* ══════════ RIGHT: Status Card + Home/Tare ══════════ */}
-          <div className="flex flex-col gap-3 md:gap-4 w-full min-h-0">
+          <div className="flex flex-col gap-3 md:gap-4 w-full min-h-0 overflow-y-auto pr-1">
 
             {/* ── Single unified status card ── */}
             <div className="bg-white rounded-xl md:rounded-2xl shadow-md border border-slate-200 p-5 flex-1">
@@ -848,57 +862,184 @@ const Manual = () => {
             </div>
             {/* end single status card */}
 
-            {/* ── Home & Tare buttons ── */}
+                                    {/* ── System & Jog Controls ── */}
             <div className="bg-white rounded-xl md:rounded-2xl shadow-md border border-slate-200 p-5 flex-shrink-0">
               <div className="flex items-center gap-2 mb-5">
                 <div className="w-1 h-5 rounded-full bg-slate-700" />
-                <span className="text-xl font-bold text-slate-800 uppercase tracking-widest">System Controls</span>
+                <span className="text-xl font-bold text-slate-800 uppercase tracking-widest">Controls</span>
               </div>
-              <div className="flex justify-around items-center gap-4">
+              
+              <div className="flex flex-col gap-5">
+                {/* Row 1: Homing, Tare, Clamp */}
+                <div className="flex justify-around items-center gap-2">
+                  {/* Home Button */}
+                  <div className="flex flex-col items-center gap-2">
+                    <button
+                      onClick={handleHome}
+                      disabled={isHomingButtonDisabled}
+                      title={isAtHomePosition ? 'Motors are already at home position' : ''}
+                      className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
+                        ${homeActive
+                          ? 'bg-indigo-500 border-indigo-600 text-white shadow-lg shadow-indigo-200'
+                          : 'bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-400 hover:shadow-md active:scale-95'}
+                        ${isHomingButtonDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                      `}
+                    >
+                      {homeActive && (
+                        <div className="absolute inset-0 rounded-full bg-indigo-400 animate-ping opacity-20 pointer-events-none" />
+                      )}
+                      <Home className={`w-7 h-7 transition-transform duration-200 ${!homeActive && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
+                    </button>
+                    <span className="text-[12px] font-bold uppercase tracking-wider text-slate-700 text-center">
+                      {homeActive ? 'Homing...' : 'Homing'}
+                    </span>
+                  </div>
 
-                {/* Home Button — circular */}
-                <div className="flex flex-col items-center gap-2">
-                  <button
-                    onClick={handleHome}
-                    disabled={isHomingButtonDisabled}
-                    title={isAtHomePosition ? 'Motors are already at home position' : ''}
-                    className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400
-                      ${homeActive
-                        ? 'bg-indigo-500 border-indigo-600 text-white shadow-lg shadow-indigo-200'
-                        : 'bg-indigo-50 border-indigo-300 text-indigo-700 hover:bg-indigo-100 hover:border-indigo-400 hover:shadow-md active:scale-95'}
-                      ${isHomingButtonDisabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
-                    `}
-                  >
-                    {homeActive && (
-                      <div className="absolute inset-0 rounded-full bg-indigo-400 animate-ping opacity-20 pointer-events-none" />
-                    )}
-                    <Home className={`w-7 h-7 transition-transform duration-200 ${!homeActive && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
-                  </button>
-                  <span className="text-[14px] font-bold uppercase tracking-wider text-slate-700">
-                    {homeActive ? 'Homing...' : 'Homing'}
-                  </span>
+                  {/* Tare Button */}
+                  <div className="flex flex-col items-center gap-2">
+                    <button
+                      onClick={handleTare}
+                      disabled={!connectionStatus.connected || emergencyActive || !manualModeActive || tareActive}
+                      className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400
+                        ${tareActive
+                          ? 'bg-teal-500 border-teal-600 text-white shadow-lg shadow-teal-200'
+                          : 'bg-teal-50 border-teal-300 text-teal-700 hover:bg-teal-100 hover:border-teal-400 hover:shadow-md active:scale-95'}
+                        ${(!connectionStatus.connected || emergencyActive || !manualModeActive || tareActive) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                      `}
+                    >
+                      {tareActive && (
+                        <div className="absolute inset-0 rounded-full bg-teal-400 animate-ping opacity-20 pointer-events-none" />
+                      )}
+                      <Scale className={`w-7 h-7 transition-transform duration-200 ${!tareActive && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
+                    </button>
+                    <span className="text-[12px] font-bold uppercase tracking-wider text-slate-700 text-center">
+                      {tareActive ? 'Taring...' : 'Tare'}
+                    </span>
+                  </div>
+
+                  {/* Clamp Press-and-Hold Button */}
+                  <div className="flex flex-col items-center gap-2">
+                    <button
+                      onMouseDown={handleClampStart}
+                      onTouchStart={handleClampStart}
+                      onMouseUp={handleClampStop}
+                      onMouseLeave={handleClampStop}
+                      onTouchEnd={handleClampStop}
+                      onTouchCancel={handleClampStop}
+                      disabled={!controlsEnabled}
+                      className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 select-none focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-400
+                        ${clamp
+                          ? 'bg-purple-500 border-purple-600 text-white shadow-lg shadow-purple-200'
+                          : 'bg-purple-50 border-purple-300 text-purple-700 hover:bg-purple-100 hover:border-purple-400 hover:shadow-md active:scale-95'}
+                        ${!controlsEnabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                      `}
+                    >
+                      {clamp && (
+                        <div className="absolute inset-0 rounded-full bg-purple-400 animate-ping opacity-20 pointer-events-none" />
+                      )}
+                      <img
+                        src={clampIcon}
+                        alt="Clamp"
+                        className={`w-7 h-7 object-contain transition-transform duration-200 ${!clamp && controlsEnabled ? 'group-hover:scale-110' : ''} ${clamp ? 'filter invert brightness-0' : ''}`}
+                      />
+                    </button>
+                    <span className="text-[12px] font-bold uppercase tracking-wider text-slate-700 text-center">
+                      Clamp
+                    </span>
+                  </div>
                 </div>
 
-                {/* Tare Button — circular */}
-                <div className="flex flex-col items-center gap-2">
-                  <button
-                    onClick={handleTare}
-                    disabled={!connectionStatus.connected || emergencyActive || !manualModeActive || tareActive}
-                    className={`relative group flex items-center justify-center w-20 h-20 rounded-full border-2 font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400
-                      ${tareActive
-                        ? 'bg-teal-500 border-teal-600 text-white shadow-lg shadow-teal-200'
-                        : 'bg-teal-50 border-teal-300 text-teal-700 hover:bg-teal-100 hover:border-teal-400 hover:shadow-md active:scale-95'}
-                      ${(!connectionStatus.connected || emergencyActive || !manualModeActive || tareActive) ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
-                    `}
-                  >
-                    {tareActive && (
-                      <div className="absolute inset-0 rounded-full bg-teal-400 animate-ping opacity-20 pointer-events-none" />
-                    )}
-                    <Scale className={`w-7 h-7 transition-transform duration-200 ${!tareActive && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
-                  </button>
-                  <span className="text-[14px] font-bold uppercase tracking-wider text-slate-700">
-                    {tareActive ? 'Taring...' : 'Tare'}
-                  </span>
+                <div className="border-t border-slate-100" />
+
+                {/* Row 2: Probe & Catheter side-by-side */}
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Probe Controls */}
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Probe Control</span>
+                    <div className="flex gap-2">
+                      {/* Probe Up */}
+                      <button
+                        onMouseDown={handleProbeUpStart}
+                        onTouchStart={handleProbeUpStart}
+                        onMouseUp={handleProbeStop}
+                        onMouseLeave={handleProbeStop}
+                        onTouchEnd={handleProbeStop}
+                        onTouchCancel={handleProbeStop}
+                        disabled={!controlsEnabled}
+                        className={`relative group flex items-center justify-center w-14 h-14 rounded-full border-2 font-semibold transition-all duration-200 select-none focus:outline-none
+                          ${probeUp
+                            ? 'bg-red-500 border-red-600 text-white shadow-lg'
+                            : 'bg-red-50 border-red-200 text-red-700 hover:bg-red-100'}
+                          ${!controlsEnabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                        `}
+                      >
+                        <ChevronUp className={`w-5 h-5 transition-transform duration-200 ${!probeUp && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
+                      </button>
+
+                      {/* Probe Down */}
+                      <button
+                        onMouseDown={handleProbeDownStart}
+                        onTouchStart={handleProbeDownStart}
+                        onMouseUp={handleProbeStop}
+                        onMouseLeave={handleProbeStop}
+                        onTouchEnd={handleProbeStop}
+                        onTouchCancel={handleProbeStop}
+                        disabled={!controlsEnabled}
+                        className={`relative group flex items-center justify-center w-14 h-14 rounded-full border-2 font-semibold transition-all duration-200 select-none focus:outline-none
+                          ${probeDown
+                            ? 'bg-blue-500 border-blue-600 text-white shadow-lg'
+                            : 'bg-blue-50 border-blue-200 text-blue-700 hover:bg-blue-100'}
+                          ${!controlsEnabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                        `}
+                      >
+                        <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${!probeDown && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Catheter Controls */}
+                  <div className="flex flex-col items-center gap-2">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-400">Catheter Control</span>
+                    <div className="flex gap-2">
+                      {/* Catheter Backward */}
+                      <button
+                        onMouseDown={handleCatheterBackwardStart}
+                        onTouchStart={handleCatheterBackwardStart}
+                        onMouseUp={handleCatheterBackwardStop}
+                        onMouseLeave={handleCatheterBackwardStop}
+                        onTouchEnd={handleCatheterBackwardStop}
+                        onTouchCancel={handleCatheterBackwardStop}
+                        disabled={!controlsEnabled}
+                        className={`relative group flex items-center justify-center w-14 h-14 rounded-full border-2 font-semibold transition-all duration-200 select-none focus:outline-none
+                          ${catheterBack
+                            ? 'bg-amber-500 border-amber-600 text-white shadow-lg'
+                            : 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100'}
+                          ${!controlsEnabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                        `}
+                      >
+                        <ChevronLeft className={`w-5 h-5 transition-transform duration-200 ${!catheterBack && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
+                      </button>
+
+                      {/* Catheter Forward */}
+                      <button
+                        onMouseDown={handleCatheterForwardStart}
+                        onTouchStart={handleCatheterForwardStart}
+                        onMouseUp={handleCatheterForwardStop}
+                        onMouseLeave={handleCatheterForwardStop}
+                        onTouchEnd={handleCatheterForwardStop}
+                        onTouchCancel={handleCatheterForwardStop}
+                        disabled={!controlsEnabled}
+                        className={`relative group flex items-center justify-center w-14 h-14 rounded-full border-2 font-semibold transition-all duration-200 select-none focus:outline-none
+                          ${catheterForward
+                            ? 'bg-green-500 border-green-600 text-white shadow-lg'
+                            : 'bg-green-50 border-green-200 text-green-700 hover:bg-green-100'}
+                          ${!controlsEnabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}
+                        `}
+                      >
+                        <ChevronRight className={`w-5 h-5 transition-transform duration-200 ${!catheterForward && controlsEnabled ? 'group-hover:scale-110' : ''}`} />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
               </div>

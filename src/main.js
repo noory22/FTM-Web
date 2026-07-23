@@ -128,11 +128,16 @@ const COIL_MANUAL_EXIT = 2002;     // M2
 const COIL_HOME = 2300;             // M300
 const COIL_TARE = 2301;            // M301
 const COIL_SETTINGS = 2302;         // M02
-const COIL_CLAMP = 1003;           // X3
-const COIL_PROBE_UP = 1006;        // X6
-const COIL_PROBE_DOWN = 1005;      // X5
-const COIL_CATHETER_BACK = 1008;   // X8
-const COIL_CATHETER_FORWARD = 1007; // X7
+const COIL_CLAMP = 2;           // Y2
+const COIL_PROBE_UP = 2037;        // X6
+const COIL_PROBE_DOWN = 2033;      // X5
+const COIL_CATHETER_BACK =2039;   // X8
+const COIL_CATHETER_FORWARD = 2035; // X7
+const CLAMP_BUTTON = 2013;        // M13
+const PROBE_UP_BUTTON = 2014;     // M14
+const PROBE_DOWN_BUTTON = 2015;   // M15
+const CATHETER_BACK_BUTTON = 2016; // M16
+const CATHETER_FORWARD_BUTTON = 2017; // M17
 const COIL_2POINT = 2008;          // M8
 const COIL_3POINT = 2009;          // M9
 const COIL_START = 2010;           // M10
@@ -277,6 +282,11 @@ async function writeDeactivateModeCoils() {
   await client.writeCoil(COIL_MANUAL_EXIT, true);
   await client.writeCoil(COIL_2POINT, false);
   await client.writeCoil(COIL_3POINT, false);
+  await client.writeCoil(CLAMP_BUTTON, false);
+  await client.writeCoil(PROBE_UP_BUTTON, false);
+  await client.writeCoil(PROBE_DOWN_BUTTON, false);
+  await client.writeCoil(CATHETER_BACK_BUTTON, false);
+  await client.writeCoil(CATHETER_FORWARD_BUTTON, false);
   updatePlcModeState(null);
 }
 
@@ -1618,28 +1628,73 @@ ipcMain.handle("write-coil-m303", async (event, value) => {
   });
 });
 
-ipcMain.handle("clamp-control", async () => {
-  return { success: true };
+ipcMain.handle("clamp-control", async (event, state) => {
+  return await safeExecute("CLAMP-CONTROL", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    await client.writeCoil(CLAMP_BUTTON, Boolean(state));
+    return { success: true, clampState: state };
+  });
 });
 
-ipcMain.handle("probe-up", async () => {
-  return { success: true };
+ipcMain.handle("probe-up", async (event, state = true) => {
+  return await safeExecute("PROBE-UP", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    if (state) {
+      await client.writeCoil(PROBE_DOWN_BUTTON, false);
+      await client.writeCoil(PROBE_UP_BUTTON, true);
+    } else {
+      await client.writeCoil(PROBE_UP_BUTTON, false);
+    }
+    return { success: true };
+  });
 });
 
-ipcMain.handle("probe-down", async () => {
-  return { success: true };
+ipcMain.handle("probe-down", async (event, state = true) => {
+  return await safeExecute("PROBE-DOWN", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    if (state) {
+      await client.writeCoil(PROBE_UP_BUTTON, false);
+      await client.writeCoil(PROBE_DOWN_BUTTON, true);
+    } else {
+      await client.writeCoil(PROBE_DOWN_BUTTON, false);
+    }
+    return { success: true };
+  });
 });
 
 ipcMain.handle("probe-stop", async () => {
-  return { success: true };
+  return await safeExecute("PROBE-STOP", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    await client.writeCoil(PROBE_UP_BUTTON, false);
+    await client.writeCoil(PROBE_DOWN_BUTTON, false);
+    return { success: true };
+  });
 });
 
-ipcMain.handle("catheter-forward", async () => {
-  return { success: true };
+ipcMain.handle("catheter-forward", async (event, state = true) => {
+  return await safeExecute("CATHETER-FORWARD", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    if (state) {
+      await client.writeCoil(CATHETER_BACK_BUTTON, false);
+      await client.writeCoil(CATHETER_FORWARD_BUTTON, true);
+    } else {
+      await client.writeCoil(CATHETER_FORWARD_BUTTON, false);
+    }
+    return { success: true };
+  });
 });
 
-ipcMain.handle("catheter-backward", async () => {
-  return { success: true };
+ipcMain.handle("catheter-backward", async (event, state = true) => {
+  return await safeExecute("CATHETER-BACKWARD", async () => {
+    if (!isConnected) throw new Error("Modbus not connected");
+    if (state) {
+      await client.writeCoil(CATHETER_FORWARD_BUTTON, false);
+      await client.writeCoil(CATHETER_BACK_BUTTON, true);
+    } else {
+      await client.writeCoil(CATHETER_BACK_BUTTON, false);
+    }
+    return { success: true };
+  });
 });
 
 // Read data handler

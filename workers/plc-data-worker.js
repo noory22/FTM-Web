@@ -28,6 +28,11 @@ const {
   COIL_PROBE_DOWN,
   COIL_CATHETER_BACK,
   COIL_CATHETER_FORWARD,
+  CLAMP_BUTTON,
+  PROBE_UP_BUTTON,
+  PROBE_DOWN_BUTTON,
+  CATHETER_BACK_BUTTON,
+  CATHETER_FORWARD_BUTTON,
   COIL_2POINT,
   COIL_3POINT,
   REG_DISTANCE,
@@ -161,6 +166,11 @@ async function writeDeactivateModeCoils() {
   await client.writeCoil(COIL_MANUAL_EXIT, true);
   await client.writeCoil(COIL_2POINT, false);
   await client.writeCoil(COIL_3POINT, false);
+  await client.writeCoil(CLAMP_BUTTON, false);
+  await client.writeCoil(PROBE_UP_BUTTON, false);
+  await client.writeCoil(PROBE_DOWN_BUTTON, false);
+  await client.writeCoil(CATHETER_BACK_BUTTON, false);
+  await client.writeCoil(CATHETER_FORWARD_BUTTON, false);
   updatePlcModeState(null);
 }
 

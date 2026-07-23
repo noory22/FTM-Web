@@ -145,11 +145,11 @@ const CreateThreePointConfig = () => {
     setErrors(prev => {
       const next = { ...prev };
 
-      // ── Catheter Dist: 1–55 mm ────────────────────────────────────────────
+      // ── Catheter Dist: 1–40 mm ────────────────────────────────────────────
       if (name === 'catheterDist') {
         if (value !== '' && !isNaN(d)) {
-          if (d > 55) {
-            next.catheterDist = 'Value cannot exceed 55 mm';
+          if (d > 40) {
+            next.catheterDist = 'Value cannot exceed 40 mm';
           } else {
             delete next.catheterDist;
           }
@@ -221,10 +221,10 @@ const CreateThreePointConfig = () => {
 
       // ── Probe Travel Limit: dynamic max = 55 − catheterDist ───────────────
       if (!isNaN(d) && d > 0) {
-        const maxProbe = Math.max(0, 55 - d);
+        const maxProbe = Math.max(0, 40 - d);
         if (!isNaN(p) && p > 0) {
           if (p > maxProbe) {
-            next.probeTravelLimit = `Value cannot exceed ${maxProbe} mm (55 − ${d})`;
+            next.probeTravelLimit = `Value cannot exceed ${maxProbe} mm (40 − ${d})`;
           } else {
             if (next.probeTravelLimit?.includes('cannot exceed')) delete next.probeTravelLimit;
           }
@@ -411,7 +411,7 @@ const CreateThreePointConfig = () => {
                     name="catheterDist"
                     value={formData.catheterDist}
                     onChange={handleInputChange}
-                    placeholder="Enter Catheter to Load Cell Distance (0-55)"
+                    placeholder="Enter Catheter to Load Cell Distance (0-40)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.catheterDist ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.catheterDist && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.catheterDist}</span></p>}
@@ -424,10 +424,10 @@ const CreateThreePointConfig = () => {
                     name="probeTravelLimit"
                     value={formData.probeTravelLimit}
                     onChange={handleInputChange}
-                    placeholder={(() => { const d = parseFloat(formData.catheterDist); return (!isNaN(d) && d > 0 && d <= 55) ? `Max: ${Math.max(0, 55 - d)} mm` : 'Enter Probe Travel Limit'; })()}
+                    placeholder={(() => { const d = parseFloat(formData.catheterDist); return (!isNaN(d) && d > 0 && d <= 40) ? `Max: ${Math.max(0, 40 - d)} mm` : 'Enter Probe Travel Limit'; })()}
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.probeTravelLimit ? 'border-red-300' : 'border-slate-200'}`}
                   />
-                  {!errors.probeTravelLimit && (() => { const d = parseFloat(formData.catheterDist); return (!isNaN(d) && d > 0 && d <= 55) ? <p className="text-xs text-slate-400 mt-1">Allowed range: 0 – {Math.max(0, 55 - d)} mm</p> : null; })()}
+                  {!errors.probeTravelLimit && (() => { const d = parseFloat(formData.catheterDist); return (!isNaN(d) && d > 0 && d <= 40) ? <p className="text-xs text-slate-400 mt-1">Allowed range: 0 – {Math.max(0, 40 - d)} mm</p> : null; })()}
                   {errors.probeTravelLimit && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.probeTravelLimit}</span></p>}
                 </div>
 
