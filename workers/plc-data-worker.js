@@ -570,6 +570,7 @@ async function processModbusLoop() {
             case 4: statusText = 'SEARCHING CONTACT'; break;
             case 5: statusText = 'RUNNING'; break;
             case 6: statusText = 'CATHETER MOVEMENT'; break;
+            case 7: statusText = 'RETRACTING'; break;
             default: statusText = 'READY'; break;
           }
           console.log(`📊 Machine Status R11: ${plcState.machineStatus} (${statusText})`);

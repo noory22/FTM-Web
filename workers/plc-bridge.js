@@ -282,6 +282,7 @@ class PlcBridge {
           case 4: return 'SEARCHING CONTACT';
           case 5: return 'RUNNING';
           case 6: return 'CATHETER MOVEMENT';
+          case 7: return 'RETRACTING';
           default: return 'READY';
         }
       })(),

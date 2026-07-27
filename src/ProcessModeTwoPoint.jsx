@@ -68,10 +68,10 @@ const RESUME_ALLOWED = new Set(["PAUSED"]);
 const RESET_ALLOWED = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING", "COMPLETED"]);
 
 // Statuses where graph data should be collected
-const GRAPH_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
+const GRAPH_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING", "RETRACTING"]);
 
 // Statuses where CSV logging should be active
-const CSV_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING"]);
+const CSV_ACTIVE = new Set(["SEARCHING CONTACT", "RUNNING", "RETRACTING"]);
 
 // Statuses that indicate test in progress (block navigation)
 const TEST_IN_PROGRESS = new Set(["SEARCHING CONTACT", "RUNNING", "PAUSED", "RETRACTING"]);
@@ -282,11 +282,26 @@ const ProcessModeTwoPoint = () => {
           ? parseFloat(data.force_mN)
           : null;
 
+        // ── Clamp R73 to probeTravelLimit during RUNNING ──────────────────────
+        // Prevents micro-overshoot from appearing on display / graph
+        let displayDistance = probeDistance;
+        if (
+          status === "RUNNING" &&
+          displayDistance !== null &&
+          selectedConfig?.probeTravelLimit !== undefined &&
+          selectedConfig?.probeTravelLimit !== null
+        ) {
+          const travelLimit = parseFloat(selectedConfig.probeTravelLimit);
+          if (!isNaN(travelLimit) && displayDistance >= travelLimit) {
+            displayDistance = travelLimit;
+          }
+        }
+
         setLiveData({
           machineStatus: status,
-          probeDistance:    probeDistance    !== null ? probeDistance.toFixed(2)    : "--",
-          catheterDistance: catheterDistance !== null ? catheterDistance.toFixed(2) : "--",
-          force:            force            !== null ? force.toFixed(2)            : "--",
+          probeDistance:    displayDistance   !== null ? displayDistance.toFixed(2)   : "--",
+          catheterDistance: catheterDistance  !== null ? catheterDistance.toFixed(2)  : "--",
+          force:            force             !== null ? force.toFixed(2)             : "--",
         });
 
         // ── Check Force Limit ────────────────────────────────────────────────
@@ -316,8 +331,10 @@ const ProcessModeTwoPoint = () => {
         }
 
         // ── Check No Force Detected ──────────────────────────────────────────
+        // Skip during RETRACTING — machine is already on its way back
         if (
           isPlotting &&
+          status !== "RETRACTING" &&
           !contactDetectedRef.current &&
           selectedConfig &&
           selectedConfig.probeTravelLimit !== undefined &&
@@ -361,7 +378,9 @@ const ProcessModeTwoPoint = () => {
         }
 
         // Reset play/pause states when machine is in HOMING or READY and not transitioning
-        if ((status === "HOMING" || status === "READY") && !isStarting && !isResuming) {
+        // Do NOT stop plotting here if the previous status was RETRACTING —
+        // the HOMING block below handles cleanup for the retract→home transition.
+        if ((status === "HOMING" || status === "READY") && !isStarting && !isResuming && prev !== "RETRACTING") {
           setIsPaused(false);
           setIsPlotting(false);
         }
@@ -378,7 +397,9 @@ const ProcessModeTwoPoint = () => {
             stopCsvLogging();
           }
 
-          if (prev === "RUNNING" || prev === "SEARCHING CONTACT") {
+          // Trigger COMPLETED flash for full cycle: RUNNING→RETRACTING→HOMING
+          // or short-circuit: RUNNING/SEARCHING CONTACT→HOMING
+          if (prev === "RUNNING" || prev === "SEARCHING CONTACT" || prev === "RETRACTING") {
             setIsTestCompleted(true);
           }
         }
@@ -404,11 +425,12 @@ const ProcessModeTwoPoint = () => {
         }
 
         // ── Chart & log while plotting is active ────────────────────────────
-        if (isPlotting && !isPausedUI && probeDistance !== null && force !== null) {
+        // Use displayDistance for the X axis so the clamped value is plotted
+        if (isPlotting && !isPausedUI && displayDistance !== null && force !== null) {
           setChartData((prev) => {
             const lastPoint = prev[prev.length - 1];
-            if (!lastPoint || lastPoint.x !== probeDistance || lastPoint.y !== force) {
-              return [...prev, { x: probeDistance, y: force }];
+            if (!lastPoint || lastPoint.x !== displayDistance || lastPoint.y !== force) {
+              return [...prev, { x: displayDistance, y: force }];
             }
             return prev;
           });
@@ -416,7 +438,7 @@ const ProcessModeTwoPoint = () => {
           // CSV row append
           if (
             isLogging &&
-            (lastLogRef.current.distance !== probeDistance ||
+            (lastLogRef.current.distance !== displayDistance ||
               lastLogRef.current.force !== force)
           ) {
             try {
@@ -430,7 +452,7 @@ const ProcessModeTwoPoint = () => {
                 },
                 config: selectedConfig,
               });
-              lastLogRef.current = { distance: probeDistance, force };
+              lastLogRef.current = { distance: displayDistance, force };
             } catch (e) {
               console.error("CSV append error:", e);
             }
