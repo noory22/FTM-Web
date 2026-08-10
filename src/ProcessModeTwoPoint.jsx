@@ -331,10 +331,10 @@ const ProcessModeTwoPoint = () => {
         }
 
         // ── Check No Force Detected ──────────────────────────────────────────
-        // Skip during RETRACTING — machine is already on its way back
+        // Fires whenever a test is active AND probe travel limit is reached
+        // with no force detected — state-independent (no machine state checks).
         if (
-          isPlotting &&
-          status !== "RETRACTING" &&
+          TEST_IN_PROGRESS.has(status) &&
           !contactDetectedRef.current &&
           selectedConfig &&
           selectedConfig.probeTravelLimit !== undefined &&
