@@ -491,7 +491,7 @@ const AppShell = () => {
                 <Menu className="h-5 w-5" />
               </button>
 
-              {location.pathname !== '/' && (
+              {!isMainMenu && (
                 <button
                   onClick={handleGlobalBack}
                   className="rounded-lg border border-slate-200 p-2 text-slate-700 hover:bg-slate-50 flex items-center justify-center transition-all duration-200"

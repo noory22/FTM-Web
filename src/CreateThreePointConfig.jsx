@@ -187,14 +187,14 @@ const CreateThreePointConfig = () => {
         }
       }
 
-      // ── Test Speed: 1–10 mm/s ─────────────────────────────────────────────
+      // ── Test Speed: 1–5 mm/s ─────────────────────────────────────────────
       if (name === 'testSpeed') {
         const v = parseFloat(value);
         if (value !== '' && !isNaN(v)) {
           if (v < 1) {
             next.testSpeed = 'Value must be at least 1 mm/s';
-          } else if (v > 10) {
-            next.testSpeed = 'Value cannot exceed 10 mm/s';
+          } else if (v > 5) {
+            next.testSpeed = 'Value cannot exceed 5 mm/s';
           } else {
             delete next.testSpeed;
           }
@@ -203,14 +203,14 @@ const CreateThreePointConfig = () => {
         }
       }
 
-      // ── Horizontal Speed: 1–10 mm/s ───────────────────────────────────────
+      // ── Horizontal Speed: 1–5 mm/s ───────────────────────────────────────
       if (name === 'horizontalSpeed') {
         const v = parseFloat(value);
         if (value !== '' && !isNaN(v)) {
           if (v < 1) {
             next.horizontalSpeed = 'Value must be at least 1 mm/s';
-          } else if (v > 10) {
-            next.horizontalSpeed = 'Value cannot exceed 10 mm/s';
+          } else if (v > 5) {
+            next.horizontalSpeed = 'Value cannot exceed 5 mm/s';
           } else {
             delete next.horizontalSpeed;
           }
@@ -451,7 +451,7 @@ const CreateThreePointConfig = () => {
                     name="testSpeed"
                     value={formData.testSpeed}
                     onChange={handleInputChange}
-                    placeholder="Enter Test Speed (1-10)"
+                    placeholder="Enter Test Speed (1-5)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.testSpeed ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.testSpeed && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.testSpeed}</span></p>}
@@ -465,7 +465,7 @@ const CreateThreePointConfig = () => {
                     name="horizontalSpeed"
                     value={formData.horizontalSpeed}
                     onChange={handleInputChange}
-                    placeholder="Enter Horizontal Speed (1-10)"
+                    placeholder="Enter Horizontal Speed (1-5)"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.horizontalSpeed ? 'border-red-300' : 'border-slate-200'}`}
                   />
                   {errors.horizontalSpeed && <p className="text-red-500 text-sm flex items-center space-x-1"><AlertCircle className="w-4 h-4" /><span>{errors.horizontalSpeed}</span></p>}

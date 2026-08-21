@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { BarChart3, Database, FileCheck, Gauge, Layers, Loader2, Play } from 'lucide-react';
+import { BarChart3, Database, Layers, Loader2, Play } from 'lucide-react';
 
 const emptyAnalytics = {
   standard: [],
@@ -60,31 +60,17 @@ const MainMenu = () => {
   }, []);
 
   const totals = useMemo(() => {
-    const totalCreated = analytics.standard.length + analytics.twoPoint.length + analytics.threePoint.length;
-
     return [
       {
-        label: 'Loaded Configs',
-        value: analytics.loadedConfig ? 1 : 0,
-        detail: analytics.loadedConfig?.configName || 'No active loaded configuration',
-        icon: FileCheck,
-      },
-      {
-        label: 'Created Configs',
-        value: totalCreated,
-        detail: 'All saved standard and point-test configurations',
+        label: '2-Point Configs',
+        value: analytics.twoPoint.length,
+        detail: 'Total saved 2-point configurations',
         icon: Database,
       },
       {
-        label: 'Standard Configs',
-        value: analytics.standard.length,
-        detail: 'Main FTM process configurations',
-        icon: Gauge,
-      },
-      {
-        label: 'Point-Test Configs',
-        value: analytics.twoPoint.length + analytics.threePoint.length,
-        detail: `${analytics.twoPoint.length} two-point, ${analytics.threePoint.length} three-point`,
+        label: '3-Point Configs',
+        value: analytics.threePoint.length,
+        detail: 'Total saved 3-point configurations',
         icon: Layers,
       },
     ];
@@ -262,7 +248,7 @@ const MainMenu = () => {
           )}
         </section>
 
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {totals.map((item) => {
             const Icon = item.icon;
 
