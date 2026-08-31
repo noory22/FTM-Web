@@ -370,16 +370,33 @@ async function findAndConnectPort() {
   try {
     console.log("🔍 Scanning for available COM ports...");
     const ports = await SerialPort.list();
-    console.log("Found ports:", ports.map(p => p.path).join(', '));
-
-    if (ports.length === 0) {
-      console.log("⚠️ No COM ports found.");
+    
+    if (!ports || ports.length === 0) {
+      console.log("⚠️ No COM ports found in system.");
       return false;
     }
 
-    for (const portInfo of ports) {
+    console.log(`📋 Found ${ports.length} port(s):`);
+    ports.forEach((p, idx) => {
+      console.log(`   [${idx + 1}] ${p.path} | Manufacturer: ${p.manufacturer || 'N/A'} | VID: ${p.vendorId || 'N/A'} | PID: ${p.productId || 'N/A'} | PnP: ${p.pnpId || 'N/A'}`);
+    });
+
+    // Prioritize USB-to-Serial devices over motherboard legacy ports (COM1/COM2)
+    const sortedPorts = [...ports].sort((a, b) => {
+      const aIsUsb = Boolean(a.vendorId || a.productId || (a.pnpId && a.pnpId.includes('USB')) || (a.manufacturer && !a.manufacturer.includes('Standard')));
+      const bIsUsb = Boolean(b.vendorId || b.productId || (b.pnpId && b.pnpId.includes('USB')) || (b.manufacturer && !b.manufacturer.includes('Standard')));
+      if (aIsUsb && !bIsUsb) return -1;
+      if (!aIsUsb && bIsUsb) return 1;
+
+      // If neither or both, prefer COM3+ over COM1/COM2
+      const aNum = parseInt(a.path.replace(/\D/g, ''), 10) || 0;
+      const bNum = parseInt(b.path.replace(/\D/g, ''), 10) || 0;
+      return bNum - aNum;
+    });
+
+    for (const portInfo of sortedPorts) {
       const portPath = portInfo.path;
-      console.log(`👉 Trying port: ${portPath}`);
+      console.log(`👉 Trying port: ${portPath} (${portInfo.manufacturer || 'Unknown device'})`);
 
       const success = await connectModbus(portPath);
       if (success) {
@@ -388,7 +405,7 @@ async function findAndConnectPort() {
       }
     }
 
-    console.log("❌ Could not find a valid Modbus device on any port.");
+    console.log("❌ Could not find a valid Modbus device on any scanned port.");
     return false;
 
   } catch (err) {

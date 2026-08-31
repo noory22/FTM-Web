@@ -225,23 +225,30 @@ async function verifyPulses(clientInstance) {
   const maxWaitTime = 10000;
   const startTime = Date.now();
 
-  console.log('🔍 Verifying 3 continuous pulses (0 -> 1 transitions) on COIL_LLS (1922)...');
+  console.log('🔍 Verifying 3 continuous pulses (0 -> 1 transitions) on COIL_LLS (3922)...');
 
   while (Date.now() - startTime < maxWaitTime) {
-    const res = await clientInstance.readCoils(COIL_LLS, 1);
-    const val = res.data[0] ? 1 : 0;
+    try {
+      const res = await clientInstance.readCoils(COIL_LLS, 1);
+      if (res && res.data && res.data.length > 0) {
+        const val = res.data[0] ? 1 : 0;
 
-    if (lastVal !== null) {
-      if (lastVal === 0 && val === 1) {
-        pulseCount++;
-        console.log(`📡 Pulse ${pulseCount} detected (0 -> 1)`);
+        if (lastVal !== null) {
+          if (lastVal === 0 && val === 1) {
+            pulseCount++;
+            console.log(`📡 Pulse ${pulseCount} detected (0 -> 1)`);
+          }
+        }
+        lastVal = val;
+
+        if (pulseCount >= 3) {
+          console.log('✅ Successfully verified 3 pulses. Connection confirmed.');
+          return true;
+        }
       }
-    }
-    lastVal = val;
-
-    if (pulseCount >= 3) {
-      console.log('✅ Successfully verified 3 pulses. Connection confirmed.');
-      return true;
+    } catch (readErr) {
+      // Don't crash verification on temporary bus noise or single timeout
+      // Log periodically or keep polling until maxWaitTime
     }
 
     await new Promise((resolve) => setTimeout(resolve, pollInterval));
@@ -277,7 +284,7 @@ async function connect(targetPort) {
     console.log('🔌 Attempting to connect to Modbus on', targetPort);
 
     if (client.isOpen) {
-      client.close();
+      try { client.close(); } catch (e) {}
     }
 
     await client.connectRTUBuffered(targetPort, {
@@ -288,12 +295,15 @@ async function connect(targetPort) {
     });
 
     client.setID(1);
-    client.setTimeout(200);
+    // Set Modbus response timeout to 1000ms
+    client.setTimeout(1000);
 
     const verified = await verifyPulses(client);
     if (!verified) {
       throw new Error('Could not verify 3 pulses on COIL_LLS');
     }
+
+    client.setTimeout(1000);
 
     isConnected = true;
     lastPulseTime = Date.now();
