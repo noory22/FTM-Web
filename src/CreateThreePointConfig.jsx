@@ -106,6 +106,7 @@ const CreateThreePointConfig = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    let sanitizedValue = value;
 
     if (name === 'configName') {
       // Allow only alphanumeric + spaces, max 30 chars
@@ -113,37 +114,50 @@ const CreateThreePointConfig = () => {
         return;
       }
     } else {
-      // Numeric fields: only positive integers allowed (no decimals, no negatives, no special chars)
+      // Numeric fields: only digits allowed
       if (!/^\d*$/.test(value)) {
         return;
       }
-      // Block leading zeros (e.g. "05")
+      // Auto-strip leading zeros (e.g. "05" -> "5", "00" -> "0") to prevent input locking
       if (value.length > 1 && value.startsWith('0')) {
-        return;
+        sanitizedValue = value.replace(/^0+/, '') || '0';
       }
     }
 
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }));
 
     if (successMessage) setSuccessMessage('');
 
     // Live cross-field distance values
-    const newDist = name === 'catheterDist' ? value : formData.catheterDist;
-    const newProbe = name === 'probeTravelLimit' ? value : formData.probeTravelLimit;
+    const newDist = name === 'catheterDist' ? sanitizedValue : formData.catheterDist;
+    const newProbe = name === 'probeTravelLimit' ? sanitizedValue : formData.probeTravelLimit;
     const d = parseFloat(newDist);
     const p = parseFloat(newProbe);
 
     // Live test length and measurement interval values
-    const newTestLength = name === 'testLength' ? value : formData.testLength;
-    const newInterval = name === 'measurementInterval' ? value : formData.measurementInterval;
+    const newTestLength = name === 'testLength' ? sanitizedValue : formData.testLength;
+    const newInterval = name === 'measurementInterval' ? sanitizedValue : formData.measurementInterval;
     const tl = parseFloat(newTestLength);
     const mi = parseFloat(newInterval);
 
     setErrors(prev => {
       const next = { ...prev };
+
+      // ── Configuration Name ────────────────────────────────────────────────
+      if (name === 'configName') {
+        if (!sanitizedValue.trim()) {
+          next.configName = 'Configuration name is required';
+        } else if (!/^[A-Za-z0-9 ]+$/.test(sanitizedValue)) {
+          next.configName = 'Configuration name must contain only alphabets, numbers, and spaces';
+        } else if (sanitizedValue.length > 30) {
+          next.configName = 'Configuration name cannot exceed 30 characters';
+        } else {
+          delete next.configName;
+        }
+      }
 
       // ── Catheter Dist: 1–40 mm ────────────────────────────────────────────
       if (name === 'catheterDist') {

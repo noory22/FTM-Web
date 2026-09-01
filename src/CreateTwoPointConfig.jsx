@@ -56,6 +56,7 @@ const CreateTwoPointConfig = () => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    let sanitizedValue = value;
 
     if (name === 'configName') {
       // Allow only alphanumeric + spaces, max 30 chars
@@ -63,31 +64,44 @@ const CreateTwoPointConfig = () => {
         return;
       }
     } else {
-      // Numeric fields: only positive integers allowed (no decimals, no negatives, no special chars)
+      // Numeric fields: only digits allowed
       if (!/^\d*$/.test(value)) {
         return;
       }
-      // Block leading zeros (e.g. "05")
+      // Auto-strip leading zeros (e.g. "05" -> "5", "00" -> "0") to prevent input locking
       if (value.length > 1 && value.startsWith('0')) {
-        return;
+        sanitizedValue = value.replace(/^0+/, '') || '0';
       }
     }
 
     setFormData(prev => ({
       ...prev,
-      [name]: value
+      [name]: sanitizedValue
     }));
 
     if (successMessage) setSuccessMessage('');
 
     // Live cross-field distance values
-    const newDist = name === 'catheterToLoadCellDistance' ? value : formData.catheterToLoadCellDistance;
-    const newProbe = name === 'probeTravelLimit' ? value : formData.probeTravelLimit;
+    const newDist = name === 'catheterToLoadCellDistance' ? sanitizedValue : formData.catheterToLoadCellDistance;
+    const newProbe = name === 'probeTravelLimit' ? sanitizedValue : formData.probeTravelLimit;
     const d = parseFloat(newDist);
     const p = parseFloat(newProbe);
 
     setErrors(prev => {
       const next = { ...prev };
+
+      // ── Configuration Name ────────────────────────────────────────────────
+      if (name === 'configName') {
+        if (!sanitizedValue.trim()) {
+          next.configName = 'Configuration name is required';
+        } else if (!/^[A-Za-z0-9 ]+$/.test(sanitizedValue)) {
+          next.configName = 'Configuration name must contain only alphabets, numbers, and spaces';
+        } else if (sanitizedValue.length > 30) {
+          next.configName = 'Configuration name cannot exceed 30 characters';
+        } else {
+          delete next.configName;
+        }
+      }
 
       // ── Catheter to Load Cell Distance: 1–55 mm ──────────────────────────
       if (name === 'catheterToLoadCellDistance') {
