@@ -45,7 +45,7 @@ const {
   REG_CATHDIST,
   TP_TEST_DIST,
 } = require('./plc-constants');
-const { toSigned16 } = require('./plc-read-utils');
+const { toSigned16, registersToFloat32LE, registersToFloat32BE } = require('./plc-read-utils');
 
 const client = new ModbusRTU();
 
@@ -518,16 +518,18 @@ async function processModbusLoop() {
       }
 
       try {
-        const fRes = await client.readHoldingRegisters(REG_FORCE, 1);
-        const rawValue = fRes.data[0];
-        const signedValue = rawValue > 32767 ? rawValue - 65536 : rawValue;
+        const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
+        const rawLow = fRes.data[0];
+        const rawHigh = fRes.data[1];
+        const floatVal = registersToFloat32LE(rawLow, rawHigh);
+        const parsedForce = Number.isFinite(floatVal) ? floatVal : 0;
 
         if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
-          console.log(`📊 REG_FORCE(R54) raw: ${rawValue} → signed: ${signedValue} mN`);
+          console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}] → float32: ${parsedForce.toFixed(3)} mN`);
           plcState._forceLogTime = Date.now();
         }
 
-        plcState.force_mN = signedValue;
+        plcState.force_mN = parsedForce;
         cycleSuccess = true;
       } catch (e) {
         console.error('❌ REG_FORCE read error:', e.message);
