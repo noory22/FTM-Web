@@ -110,7 +110,7 @@ const LoadThreePointConfig = () => {
                           <div>
                             <p className="font-medium text-slate-800">{config.configName}</p>
                             <p className="text-sm text-slate-500 mt-1">
-                              {config.testLength}mm, {config.forceLimit}mN
+                              {config.testLength}mm, {config.forceLimit}gf
                             </p>
                           </div>
                         </button>
@@ -186,7 +186,7 @@ const LoadThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Force Limit (mN)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Force Limit (gf)</label>
                   <input
                     type="text"
                     value={selectedConfig ? selectedConfig.forceLimit : ''}

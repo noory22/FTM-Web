@@ -124,16 +124,23 @@ const SafetyAlert = ({ children }) => {
       return;
     }
 
-    if (safetyActive) {
+    if (emergencyActive) {
+      // Auto-navigation directly to Dashboard is handled by AppShell
+      setPromptPhase(null);
+      setTriggerType(null);
+      return;
+    }
+
+    if (isConnected && !powerActive) {
       setPromptPhase('active');
-      setTriggerType(currentTriggerType);
+      setTriggerType('power');
       return;
     }
 
     if (promptPhaseRef.current === 'active') {
       setPromptPhase('cleared');
     }
-  }, [isSafetyRoute, safetyActive, currentTriggerType]);
+  }, [isSafetyRoute, emergencyActive, isConnected, powerActive]);
 
   const showPrompt = statusChecked && isSafetyRoute && promptPhase !== null;
   const isClearedPhase = promptPhase === 'cleared';

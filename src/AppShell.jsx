@@ -140,6 +140,22 @@ const AppShell = () => {
     updateModeFromPath();
   }, [location.pathname, connectionStatus, emergencyActive]);
 
+  // Auto-navigate to dashboard immediately when emergency button is pressed from any non-dashboard route
+  useEffect(() => {
+    if (emergencyActive) {
+      const isDashboard = location.pathname === '/' || location.pathname === '/main-menu';
+      if (!isDashboard) {
+        console.warn('🚨 Emergency button pressed! Automatically navigating to dashboard...');
+        if (location.pathname.includes('manual-mode')) {
+          window.api?.deactivateManual?.().catch((err) => {
+            console.error('Error deactivating manual mode on emergency:', err);
+          });
+        }
+        navigate('/');
+      }
+    }
+  }, [emergencyActive, location.pathname, navigate]);
+
   useEffect(() => {
     const handleModbusReconnect = (event) => {
       if (event.detail !== 'connected' || emergencyActive) return;
