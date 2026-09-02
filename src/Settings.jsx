@@ -26,7 +26,7 @@ const Settings = () => {
   const [weightRange, setWeightRange] = useState('');
   const [inputsMode, setInputsMode] = useState('0'); // '0', '1', or '2'
 
-  // Telemetry state (R30, R31, R36)
+  // Telemetry state (R54, R31, R36)
   const [telemetry, setTelemetry] = useState({
     force: '--',
     rawForce: '--',
@@ -48,9 +48,9 @@ const Settings = () => {
         if (data.success) {
           setConnectionStatus('connected');
           
-          // Format R30 (Settings Force in grams)
-          const forceVal = Number(data.settingsForce);
-          const formattedForce = isFinite(forceVal) ? `${forceVal} gram` : '--';
+          // Format R54 (Real-time Force 32-bit Float in mN)
+          const forceVal = Number(data.force_mN);
+          const formattedForce = isFinite(forceVal) ? `${forceVal.toFixed(2)} gf` : (data.forceDisplay || '--');
 
           // Format R31 (Raw Force)
           const rawForceVal = Number(data.rawForce);
@@ -328,7 +328,7 @@ const Settings = () => {
               {/* Read Telemetry Display */}
               <div className="space-y-4 my-auto py-4">
                 
-                {/* Real-time Force (R30) */}
+                {/* Real-time Force (R54) */}
                 <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between shadow-sm">
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Real-time Force</span>

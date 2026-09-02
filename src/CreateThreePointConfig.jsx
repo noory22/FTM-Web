@@ -185,14 +185,14 @@ const CreateThreePointConfig = () => {
         }
       }
 
-      // ── Force Limit: 10–25000 mN ──────────────────────────────────────────
+      // ── Force Limit: 10–25000 gf ──────────────────────────────────────────
       if (name === 'forceLimit') {
         const v = parseFloat(value);
         if (value !== '' && !isNaN(v)) {
           if (v < 10) {
-            next.forceLimit = 'Value must be at least 10 mN';
+            next.forceLimit = 'Value must be at least 10 gf';
           } else if (v > 25000) {
-            next.forceLimit = 'Value cannot exceed 25000 mN';
+            next.forceLimit = 'Value cannot exceed 25000 gf';
           } else {
             delete next.forceLimit;
           }
@@ -446,7 +446,7 @@ const CreateThreePointConfig = () => {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="block text-sm font-semibold text-slate-700">Force Limit (mN)</label>
+                  <label className="block text-sm font-semibold text-slate-700">Force Limit (gf)</label>
                   <input
                     type="text"
                     name="forceLimit"

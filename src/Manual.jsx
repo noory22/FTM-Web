@@ -142,7 +142,7 @@ const Manual = () => {
           label: function(context) {
             const label = context.dataset.label || '';
             const force = context.parsed.y.toFixed(2);
-            return `${label}: ${force} mN`;
+            return `${label}: ${force} gf`;
           },
           title: function(context) {
             const distance = context[0].parsed.x.toFixed(2);
@@ -169,7 +169,7 @@ const Manual = () => {
         type: 'linear',
         title: {
           display: true,
-          text: 'Force (mN)',
+          text: 'Force (gf)',
           color: '#6b7280',
           font: { size: 12, weight: 'bold' },
         },
@@ -716,7 +716,7 @@ const Manual = () => {
               </div>
               <div>
                 <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Force</p>
-                <p className="text-2xl font-bold text-slate-800">{force} <span className="text-sm font-medium text-slate-500">mN</span></p>
+                <p className="text-2xl font-bold text-slate-800">{force} <span className="text-sm font-medium text-slate-500">gf</span></p>
               </div>
             </div>
           </div>

@@ -109,7 +109,7 @@ const AppShell = () => {
             machineStatus: data.machineStatusDisplay || 'IDLE',
             distance: data.distance !== undefined ? `${data.distance} mm` : '--',
             catheterDistance: data.catheterDistance !== undefined ? `${data.catheterDistance} mm` : '--',
-            force: data.force_mN !== undefined ? `${data.force_mN.toFixed(2)} mN` : '--',
+            force: data.force_mN !== undefined ? `${data.force_mN.toFixed(2)} gf` : '--',
             manual: Boolean(data.manual),
             twoPoint: Boolean(data.twoPoint),
             threePoint: Boolean(data.threePoint)

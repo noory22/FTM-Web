@@ -125,7 +125,7 @@ const CreateConfig = () => {
     } else if (isNaN(formData.thresholdForce) || parseFloat(formData.thresholdForce) <= 0) {
       newErrors.thresholdForce = 'Please enter a valid positive number';
     } else if (parseFloat(formData.thresholdForce) < 100 || parseFloat(formData.thresholdForce) > 10000) {
-      newErrors.thresholdForce = 'Threshold Force must be between 100mN and 10000mN';
+      newErrors.thresholdForce = 'Threshold Force must be between 100gf and 10000gf';
     }
 
     if (!formData.insertionLength.trim()) {
@@ -236,7 +236,7 @@ const CreateConfig = () => {
         }
       } else if (name === 'thresholdForce') {
         if (numVal < 100 || numVal > 10000) {
-          newError = 'Threshold Force must be between 100mN and 10000mN';
+          newError = 'Threshold Force must be between 100gf and 10000gf';
         }
       } else if (name === 'insertionLength') {
         if (numVal < 10 || numVal > 60) {
@@ -451,7 +451,7 @@ const CreateConfig = () => {
                 {/* Threshold Force */}
                 <div className="space-y-2">
                   <label htmlFor="thresholdForce" className="block text-sm font-semibold text-slate-700">
-                    Threshold Force (mN)
+                    Threshold Force (gf)
                   </label>
                   <input
                     type="text"
@@ -459,7 +459,7 @@ const CreateConfig = () => {
                     name="thresholdForce"
                     value={formData.thresholdForce}
                     onChange={handleInputChange}
-                    placeholder="Enter Threshold Force in range 100mN - 10000mN"
+                    placeholder="Enter Threshold Force in range 100gf - 10000gf"
                     className={`w-full px-4 py-3 border-2 rounded-xl transition-all duration-200 focus:outline-none focus:ring-4 focus:ring-blue-100 placeholder:text-slate-400 ${errors.thresholdForce
                       ? 'border-red-300 focus:border-red-500'
                       : 'border-slate-200 focus:border-blue-500'
@@ -667,7 +667,7 @@ const CreateConfig = () => {
                     <div className="flex items-start space-x-3">
                       <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 shrink-0"></div>
                       <p className="text-blue-800 text-sm lg:text-base">
-                        <span className="font-semibold">Threshold Force </span> should be in range  <span className="font-semibold"> 100mN - 10000mN </span>
+                        <span className="font-semibold">Threshold Force </span> should be in range  <span className="font-semibold"> 100gf - 10000gf </span>
                       </p>
                     </div>
                     <div className="flex items-start space-x-3">

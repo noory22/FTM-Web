@@ -686,7 +686,7 @@ const ProcessModeTwoPoint = () => {
   const chartConfig = {
     datasets: [
       {
-        label: "Force (mN)",
+        label: "Force (gf)",
         data: chartData,
         borderColor: "#3b82f6",
         backgroundColor: "rgba(59,130,246,0.08)",
@@ -720,7 +720,7 @@ const ProcessModeTwoPoint = () => {
         padding: 10,
         callbacks: {
           title: (ctx) => `Distance: ${ctx[0].parsed.x.toFixed(2)} mm`,
-          label: (ctx) => `Force: ${ctx.parsed.y.toFixed(2)} mN`,
+          label: (ctx) => `Force: ${ctx.parsed.y.toFixed(2)} gf`,
         },
       },
     },
@@ -745,7 +745,7 @@ const ProcessModeTwoPoint = () => {
         type: "linear",
         title: {
           display: true,
-          text: "Force (mN)",
+          text: "Force (gf)",
           color: "#6b7280",
           font: { size: 12, weight: "bold" },
         },
@@ -754,7 +754,7 @@ const ProcessModeTwoPoint = () => {
           color: "#6b7280",
           font: { size: 11 },
           maxTicksLimit: 8,
-          callback: (v) => `${v} mN`,
+          callback: (v) => `${v} gf`,
         },
       },
     },
@@ -810,11 +810,11 @@ const ProcessModeTwoPoint = () => {
             </div>
             <div className="p-6 text-center space-y-4">
               <p className="text-gray-600 text-sm">
-                The real-time force has reached or exceeded the configured limit of <span className="font-bold text-red-600">{selectedConfig?.forceLimit} mN</span>.
+                The real-time force has reached or exceeded the configured limit of <span className="font-bold text-red-600">{selectedConfig?.forceLimit} gf</span>.
               </p>
               <div className="bg-red-50/50 rounded-xl p-3 border border-red-100">
                 <p className="text-xs text-red-800 font-medium">
-                  Current Force: <span className="text-sm font-bold">{liveData.force} mN</span>
+                  Current Force: <span className="text-sm font-bold">{liveData.force} gf</span>
                 </p>
               </div>
               <button
@@ -850,7 +850,7 @@ const ProcessModeTwoPoint = () => {
                 ["Status READY", "System must be in READY / IDLE state before starting."],
                 ["Machine Position", "Ensure machine is at home position (Distance = 0.0 mm)."],
                 ["Sample Placement", "Verify sample is properly positioned and secured."],
-                ["Force Sensor", "Verify force reading is at baseline (near 0 mN)."],
+                ["Force Sensor", "Verify force reading is at baseline (near 0 gf)."],
                 ["Monitor Graph", "Watch real-time Force vs Probe Distance plot for anomalies."],
                 ["PAUSE (Stop)", "Use PAUSE button if any issues are observed."],
                 ["Stay Present", "Never leave the machine unattended during operation."],
@@ -964,7 +964,7 @@ const ProcessModeTwoPoint = () => {
             <div className="shrink-0 grid gap-2 grid-cols-2">
               {/* <TeleTile label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" colorClass="from-violet-500 to-indigo-500" bgClass="from-violet-50 to-indigo-50 border-violet-200/60" textClass="text-violet-700" /> */}
               <TeleTile label="Test Distance"   value={liveData.probeDistance}    unit="mm" colorClass="from-green-500 to-emerald-500" bgClass="from-green-50 to-emerald-50 border-green-200/60"   textClass="text-green-700"  />
-              <TeleTile label="Force"               value={liveData.force}            unit="mN" colorClass="from-cyan-500 to-blue-500"     bgClass="from-cyan-50 to-blue-50 border-cyan-200/60"       textClass="text-blue-700"   />
+              <TeleTile label="Force"               value={liveData.force}            unit="gf" colorClass="from-cyan-500 to-blue-500"     bgClass="from-cyan-50 to-blue-50 border-cyan-200/60"       textClass="text-blue-700"   />
             </div>
           )}
 
@@ -1004,7 +1004,7 @@ const ProcessModeTwoPoint = () => {
               <div className="grid gap-2 grid-cols-1">
                 {/* <SensorCard label="Horizontal Distance" value={liveData.catheterDistance} unit="mm" gradient="from-violet-500 to-indigo-500" bg="from-violet-50 to-indigo-50" border="border-violet-200/60" textColor="text-violet-700" icon={<Ruler className="w-4 h-4 text-white" />} /> */}
                 <SensorCard label="Test Distance"   value={liveData.probeDistance}    unit="mm" gradient="from-green-500 to-emerald-500" bg="from-green-50 to-emerald-50"   border="border-green-200/60"  textColor="text-green-700"  icon={<Ruler className="w-4 h-4 text-white" />} />
-                <SensorCard label="Force"               value={liveData.force}            unit="mN" gradient="from-cyan-500 to-blue-500"    bg="from-cyan-50 to-blue-50"       border="border-cyan-200/60"   textColor="text-blue-700"   icon={<Gauge className="w-4 h-4 text-white" />} />
+                <SensorCard label="Force"               value={liveData.force}            unit="gf" gradient="from-cyan-500 to-blue-500"    bg="from-cyan-50 to-blue-50"       border="border-cyan-200/60"   textColor="text-blue-700"   icon={<Gauge className="w-4 h-4 text-white" />} />
               </div>
             </div>
 
@@ -1083,7 +1083,7 @@ const ConfigDetails = ({ config, liveData }) => {
       <InfoRow label="Test Type"         value="2-Point" />
       <InfoRow label="Catheter To Load Cell Distance" value={config.catheterToLoadCellDistance ? `${config.catheterToLoadCellDistance} mm` : "--"} />
       <InfoRow label="Probe Travel Limit" value={config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--"} />
-      <InfoRow label="Force Limit"       value={config.forceLimit ? `${config.forceLimit} mN` : "--"} />
+      <InfoRow label="Force Limit"       value={config.forceLimit ? `${config.forceLimit} gf` : "--"} />
       <InfoRow label="Test Speed"        value={config.testSpeed ? `${config.testSpeed} mm/s` : "--"} />
     </div>
   );

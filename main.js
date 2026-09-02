@@ -533,9 +533,9 @@ async function startCSVLogging(config) {
     csvStream.write(`//CONFIG:${configJson}\n`);
 
     if (config.testType === '3-point') {
-      csvStream.write("Timestamp,TestDistance_R452(mm),Force(mN),CatheterDistance_R450(mm),Steps_R451\n");
+      csvStream.write("Timestamp,TestDistance_R452(mm),Force(gf),CatheterDistance_R450(mm),Steps_R451\n");
     } else {
-      csvStream.write("Timestamp,Steps,Distance_R70(mm),Distance_R73(mm),Distance_R71(mm),Force(mN)\n");
+      csvStream.write("Timestamp,Steps,Distance_R70(mm),Distance_R73(mm),Distance_R71(mm),Force(gf)\n");
     }
 
     return { success: true, filePath: csvFilePath, fileName: path.basename(csvFilePath) };

@@ -505,7 +505,7 @@ const ProcessLogs = () => {
                             </p>
                           </div>
                           <p className="text-purple-700 font-bold">
-                            {selectedLog.configData.forceLimit || "--"} mN
+                            {selectedLog.configData.forceLimit || "--"} gf
                           </p>
                         </div>
 
@@ -572,7 +572,7 @@ const ProcessLogs = () => {
                             </p>
                           </div>
                           <p className="text-orange-700 font-bold">
-                            {selectedLog.configData.forceLimit || "--"} mN
+                            {selectedLog.configData.forceLimit || "--"} gf
                           </p>
                         </div>
 
@@ -626,7 +626,7 @@ const ProcessLogs = () => {
                             </p>
                           </div>
                           <p className="text-blue-700 font-bold">
-                            {selectedLog.configData.thresholdForce || "--"} mN
+                            {selectedLog.configData.thresholdForce || "--"} gf
                           </p>
                         </div>
 
@@ -847,7 +847,7 @@ const ProcessLogs = () => {
                       <YAxis
                         stroke="#64748b"
                         label={{
-                          value: "Force (mN)",
+                          value: "Force (gf)",
                           angle: -90,
                           position: "insideLeft",
                           style: { fill: "#64748b", fontWeight: "bold" },
@@ -861,7 +861,7 @@ const ProcessLogs = () => {
                           boxShadow: "0 10px 15px -3px rgba(0, 0, 0, 0.1)",
                           padding: "12px",
                         }}
-                        formatter={(value) => [`${value.toFixed(3)} mN`, "Force"]}
+                        formatter={(value) => [`${value.toFixed(3)} gf`, "Force"]}
                         labelFormatter={(label) => `Distance: ${label} mm`}
                       />
 
@@ -943,7 +943,7 @@ const ProcessLogs = () => {
                       {Math.max(
                         ...forwardData.map(d => d.force || 0),
                         ...backwardData.map(d => d.force || 0)
-                      ).toFixed(3)} mN
+                      ).toFixed(3)} gf
                     </p>
                   </div>
                   <div className="bg-gradient-to-r from-purple-50 to-purple-100 rounded-xl p-4 border border-purple-200">

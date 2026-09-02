@@ -515,7 +515,7 @@ async function startCSVLogging(config) {
     // Line 2: Column headers
     const configJson = JSON.stringify(config);
     csvStream.write(`//CONFIG:${configJson}\n`);
-    csvStream.write("Timestamp,Steps,Distance_R70(mm),Distance_R73(mm),Distance_R71(mm),Force(mN)\n");
+    csvStream.write("Timestamp,Steps,Distance_R70(mm),Distance_R73(mm),Distance_R71(mm),Force(gf)\n");
 
     return { success: true, filePath: csvFilePath };
   } catch (error) {
