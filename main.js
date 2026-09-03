@@ -150,7 +150,7 @@ const COIL_3RESET = 2442           // M442
 
 const REG_DISTANCE = 70;  // 1 register (16-bit integer) — Probe DistanceG
 const TEST_DIST = 73; // 1 register (16-bit integer) — TEST Distance that used using 2 & 3 point mode
-const REG_FORCE = 54;     // 2 registers (32-bit float)  — Force
+const REG_FORCE = 54;     // 1 register (16-bit integer) — Force
 const REG_MANUAL_DISTANCE = 71;   // 1 register (16-bit integer) — Catheter Distance (R71)
 const REG_MACHINE_STATUS = 11;    // 1 register (16-bit integer) — Machine Status (R11): 1=IDLE, 2=HOMING, 3=READY
 const REG_STEPS = 451;             // 1 register (16-bit integer) — No. of Steps to move (R72)
@@ -198,7 +198,7 @@ let client = {
 let plcState = {
   distance: 0,        // R70  — Probe Distance (mm)
   test_Dist: 0,        // R73  — TEST Distance (mm)
-  force_mN: 0,        // R54  — Force (mN, 32-bit float)
+  force_mN: 0,        // R54  — Force (mN, 16-bit integer)
   catheterDistance: 0,// R71  — Catheter Distance (mm)
   catheterDistanceR450: 0, // R450 — Catheter Distance for 3-point/2-point process (mm)
   tpTestDist: 0,           // R452 — Test Distance for 3-point process (mm)

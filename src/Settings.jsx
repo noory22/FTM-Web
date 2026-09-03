@@ -48,7 +48,7 @@ const Settings = () => {
         if (data.success) {
           setConnectionStatus('connected');
           
-          // Format R54 (Real-time Force 32-bit Float in mN)
+          // Format R54 (Real-time Force 16-bit Integer in mN)
           const forceVal = Number(data.force_mN);
           const formattedForce = isFinite(forceVal) ? `${forceVal.toFixed(2)} gf` : (data.forceDisplay || '--');
 

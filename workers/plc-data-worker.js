@@ -518,14 +518,12 @@ async function processModbusLoop() {
       }
 
       try {
-        const fRes = await client.readHoldingRegisters(REG_FORCE, 2);
-        const rawLow = fRes.data[0];
-        const rawHigh = fRes.data[1];
-        const floatVal = registersToFloat32LE(rawLow, rawHigh);
-        const parsedForce = Number.isFinite(floatVal) ? floatVal : 0;
+        const fRes = await client.readHoldingRegisters(REG_FORCE, 1);
+        const rawVal = toSigned16(fRes.data[0]);
+        const parsedForce = Number.isFinite(rawVal) ? rawVal : 0;
 
         if (Date.now() - (plcState._forceLogTime || 0) > 5000) {
-          console.log(`📊 REG_FORCE(R54) raw words: [${rawLow}, ${rawHigh}] → float32: ${parsedForce.toFixed(3)} mN`);
+          console.log(`📊 REG_FORCE(R54) raw int16: ${parsedForce} mN`);
           plcState._forceLogTime = Date.now();
         }
 
