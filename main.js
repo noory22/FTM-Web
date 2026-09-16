@@ -824,6 +824,35 @@ async function deleteLogFile(filePath) {
   }
 }
 
+async function downloadLogFile(filePath, defaultFileName) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' };
+    }
+
+    const defaultPath = path.join(app.getPath('downloads'), defaultFileName || path.basename(filePath));
+
+    const { canceled, filePath: savePath } = await dialog.showSaveDialog(mainWindow, {
+      title: 'Download Process Log CSV',
+      defaultPath: defaultPath,
+      filters: [
+        { name: 'CSV Files', extensions: ['csv'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (canceled || !savePath) {
+      return { success: false, canceled: true };
+    }
+
+    await fsPromises.copyFile(filePath, savePath);
+    return { success: true, savePath };
+  } catch (error) {
+    console.error('Error downloading log file:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // ============================
 // Create Window - Updated for electron-builder
 // ============================
@@ -2107,6 +2136,10 @@ ipcMain.handle("read-log-file", async (event, filePath) => {
 
 ipcMain.handle("delete-log-file", async (event, filePath) => {
   return await deleteLogFile(filePath);
+});
+
+ipcMain.handle("download-log-file", async (event, filePath, defaultFileName) => {
+  return await downloadLogFile(filePath, defaultFileName);
 });
 
 

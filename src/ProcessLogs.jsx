@@ -15,6 +15,7 @@ import {
   AlertCircle,
   Gauge,
   RotateCcw,
+  Download,
 } from "lucide-react";
 import { Line as ChartJsLine, Bar as ChartJsBar } from "react-chartjs-2";
 import {
@@ -73,6 +74,8 @@ const ProcessLogs = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("Operation completed successfully!");
+  const [downloadingFile, setDownloadingFile] = useState(null);
   const [forwardData, setForwardData] = useState([]);
   const [backwardData, setBackwardData] = useState([]);
   const [threePointPeakSeries, setThreePointPeakSeries] = useState([]);
@@ -233,6 +236,7 @@ const ProcessLogs = () => {
         }
 
         setShowDeleteConfirm(false);
+        setSuccessMessage("Log file deleted successfully!");
         setShowSuccessMessage(true);
 
         // Auto hide success message after 2 seconds
@@ -268,6 +272,7 @@ const ProcessLogs = () => {
       setThreePointPeakSeries([]);
       setThreePointBarSlots([]);
       setShowDeleteAllConfirm(false);
+      setSuccessMessage("All log files deleted successfully!");
       setShowSuccessMessage(true);
 
       // Auto hide success message after 2 seconds
@@ -279,6 +284,59 @@ const ProcessLogs = () => {
       alert("Error deleting log files. Please try again.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleDownloadLog = async (log, e) => {
+    if (e) {
+      e.stopPropagation();
+    }
+    if (!log) return;
+
+    try {
+      setDownloadingFile(log.filename);
+
+      if (window.api && window.api.downloadLogFile) {
+        const result = await window.api.downloadLogFile(log.filePath, log.filename);
+        if (result && result.success) {
+          setSuccessMessage(`Log file "${log.displayName || log.filename}" saved successfully!`);
+          setShowSuccessMessage(true);
+          setTimeout(() => {
+            setShowSuccessMessage(false);
+          }, 2500);
+        } else if (result && result.canceled) {
+          // User canceled the file dialog
+        } else {
+          alert("Error saving log file: " + (result?.error || "Unknown error"));
+        }
+      } else {
+        // Fallback for browser environment
+        const result = await window.api.readLogFile(log.filePath);
+        if (result && result.success && result.rawData) {
+          const blob = new Blob([result.rawData], { type: "text/csv;charset=utf-8;" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.setAttribute("download", log.filename);
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(url);
+
+          setSuccessMessage(`Log file "${log.displayName || log.filename}" downloaded successfully!`);
+          setShowSuccessMessage(true);
+          setTimeout(() => {
+            setShowSuccessMessage(false);
+          }, 2500);
+        } else {
+          alert("Error reading log file content: " + (result?.error || "File data unavailable"));
+        }
+      }
+    } catch (error) {
+      console.error("Error downloading log file:", error);
+      alert("Error downloading log file: " + error.message);
+    } finally {
+      setDownloadingFile(null);
     }
   };
 
@@ -388,29 +446,56 @@ const ProcessLogs = () => {
                         </p>
                       </div>
                     ) : (
-                      logFiles.map((log) => (
-                        <button
-                          key={log.filename}
-                          onClick={() => handleLogSelection(log)}
-                          className="w-full p-4 text-left hover:bg-slate-50 border-b border-slate-100 last:border-b-0 transition-colors duration-150 focus:outline-none focus:bg-blue-50"
-                        >
-                          <div>
-                            <p className="font-medium text-slate-800">
-                              {log.displayName}
-                            </p>
-                            <div className="flex items-center space-x-4 mt-1 text-xs text-slate-500">
-                              <div className="flex items-center space-x-1">
-                                <Calendar className="w-3 h-3" />
-                                <span>{formatDate(log.date)}</span>
+                      logFiles.map((log) => {
+                        const isSelected = selectedLog?.filename === log.filename;
+                        const isDownloading = downloadingFile === log.filename;
+
+                        return (
+                          <div
+                            key={log.filename}
+                            className={`w-full p-3 sm:p-4 flex items-center justify-between border-b border-slate-100 last:border-b-0 transition-colors duration-150 ${
+                              isSelected ? "bg-blue-50/70" : "hover:bg-slate-50"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => handleLogSelection(log)}
+                              className="flex-1 min-w-0 text-left focus:outline-none pr-3 group cursor-pointer"
+                            >
+                              <p className="font-semibold text-slate-800 group-hover:text-blue-700 truncate text-sm sm:text-base transition-colors">
+                                {log.displayName}
+                              </p>
+                              <div className="flex items-center space-x-3 mt-1 text-xs text-slate-500">
+                                <div className="flex items-center space-x-1 shrink-0">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span>{formatDate(log.date)}</span>
+                                </div>
+                                <div className="flex items-center space-x-1 shrink-0">
+                                  <Clock className="w-3.5 h-3.5" />
+                                  <span>{formatTime(log.date, log.time)}</span>
+                                </div>
                               </div>
-                              <div className="flex items-center space-x-1">
-                                <Clock className="w-3 h-3" />
-                                <span>{formatTime(log.date, log.time)}</span>
-                              </div>
-                            </div>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleDownloadLog(log, e)}
+                              disabled={isDownloading}
+                              title="Download CSV"
+                              className="shrink-0 p-2 sm:px-3 sm:py-2 text-blue-600 hover:text-white hover:bg-blue-600 active:scale-95 bg-blue-50 border border-blue-200 rounded-xl shadow-xs transition-all duration-150 flex items-center space-x-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50 cursor-pointer"
+                            >
+                              {isDownloading ? (
+                                <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                              ) : (
+                                <Download className="w-4 h-4" />
+                              )}
+                              <span className="text-xs font-semibold hidden sm:inline">
+                                {isDownloading ? "Saving..." : "Download"}
+                              </span>
+                            </button>
                           </div>
-                        </button>
-                      ))
+                        );
+                      })
                     )}
                   </div>
                 )}
@@ -1090,7 +1175,7 @@ const ProcessLogs = () => {
             </div>
 
             <p className="text-slate-600 mb-6">
-              Log file deleted successfully!
+              {successMessage}
             </p>
 
             <button
