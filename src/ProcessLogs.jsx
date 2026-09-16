@@ -481,17 +481,14 @@ const ProcessLogs = () => {
                               type="button"
                               onClick={(e) => handleDownloadLog(log, e)}
                               disabled={isDownloading}
-                              title="Download CSV"
-                              className="shrink-0 p-2 sm:px-3 sm:py-2 text-blue-600 hover:text-white hover:bg-blue-600 active:scale-95 bg-blue-50 border border-blue-200 rounded-xl shadow-xs transition-all duration-150 flex items-center space-x-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50 cursor-pointer"
+                              title={isDownloading ? "Saving..." : "Download CSV"}
+                              className="shrink-0 ml-2 w-9 h-9 text-blue-600 hover:text-white hover:bg-blue-600 active:scale-95 bg-blue-50 border border-blue-200 rounded-xl shadow-xs transition-all duration-150 flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:opacity-50 cursor-pointer"
                             >
                               {isDownloading ? (
                                 <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                               ) : (
                                 <Download className="w-4 h-4" />
                               )}
-                              <span className="text-xs font-semibold hidden sm:inline">
-                                {isDownloading ? "Saving..." : "Download"}
-                              </span>
                             </button>
                           </div>
                         );
