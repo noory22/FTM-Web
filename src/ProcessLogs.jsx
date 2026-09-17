@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ArrowLeft,
   Power,
@@ -85,6 +85,38 @@ const ProcessLogs = () => {
   const [showCurvesDropdown, setShowCurvesDropdown] = useState(false);
 
   const testType = selectedLog && selectedLog.configData ? (selectedLog.configData.testType || 'legacy') : 'legacy';
+
+  // --- Fit-to-screen layout helpers -------------------------------------
+  // Measures how much vertical space is left below the app header and pins
+  // this page to exactly that height, so the graphs always fit without scrolling.
+  const pageRef = useRef(null);
+  const [pageHeight, setPageHeight] = useState(null);
+
+  useEffect(() => {
+    const updateHeight = () => {
+      if (!pageRef.current) return;
+      const top = pageRef.current.getBoundingClientRect().top;
+      const available = window.innerHeight - top;
+      setPageHeight(Math.max(320, available));
+    };
+
+    updateHeight();
+    const timer = setTimeout(updateHeight, 150);
+    window.addEventListener("resize", updateHeight);
+
+    let observer = null;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(updateHeight);
+      observer.observe(document.body);
+    }
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("resize", updateHeight);
+      if (observer) observer.disconnect();
+    };
+  }, []);
+  // ----------------------------------------------------------------------
 
   useEffect(() => {
     loadLogFiles();
@@ -401,21 +433,20 @@ const ProcessLogs = () => {
 
   return (
     <div
-      // className={`min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-4 md:p-6 ${showDeleteConfirm || showDeleteAllConfirm || showSuccessMessage ? "backdrop-blur-sm" : ""}`}
-      // className={`h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-2 sm:p-3 md:p-4 overflow-hidden ${showDeleteConfirm || showDeleteAllConfirm || showSuccessMessage ? "backdrop-blur-sm" : ""}`}
-            className={`min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-2 sm:p-3 md:p-4 overflow-y-auto ${showDeleteConfirm || showDeleteAllConfirm || showSuccessMessage ? "backdrop-blur-sm" : ""}`}
-
+      ref={pageRef}
+      style={pageHeight ? { height: `${pageHeight}px` } : undefined}
+      className={`h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-2 sm:p-3 md:p-4 overflow-hidden flex flex-col ${showDeleteConfirm || showDeleteAllConfirm || showSuccessMessage ? "backdrop-blur-sm" : ""}`}
     >
-      <div className="w-full mx-auto">
+      <div className="w-full mx-auto flex-1 min-h-0 flex flex-col">
         {/* Main Content */}
         {/* <div className="grid grid-cols-1 xl:grid-cols-4 gap-6"> */}
         {/* <div className="grid grid-cols-1 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4 h-[calc(100vh-100px)]"> */}
-        <div className="grid grid-cols-1 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4 min-h-[calc(100vh-120px)]">
+        <div className="grid grid-cols-1 xl:grid-cols-4 gap-2 sm:gap-3 md:gap-4 flex-1 min-h-0">
           {/* Left Panel - Log Selection & Config Info */}
           {/* <div className="xl:col-span-1 space-y-6"> */}
           {/* <div className="xl:col-span-1 space-y-2 sm:space-y-3 md:space-y-4 overflow-y-auto h-full pr-1"> */}
           {/* <div className="xl:col-span-1 space-y-2 sm:space-y-3 md:space-y-4 overflow-y-auto h-full pr-1 pb-4"> */}
-          <div className="xl:col-span-1 space-y-2 sm:space-y-3 md:space-y-4 pr-1 pb-4">
+          <div className="xl:col-span-1 space-y-2 sm:space-y-3 md:space-y-4 pr-1 pb-2 h-full min-h-0 overflow-y-auto">
             {/* Log File Selector */}
             <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6">
               <div className="relative">
@@ -862,12 +893,12 @@ const ProcessLogs = () => {
           {/* Right Panel - Graph and Data */}
           {/* <div className="xl:col-span-3 space-y-6"> */}
           {/* <div className="xl:col-span-3 h-full flex flex-col"> */}
-          <div className="xl:col-span-3 h-full flex flex-col min-h-[400px] md:min-h-0">
+          <div className="xl:col-span-3 h-full min-h-0 flex flex-col">
             {/* Force vs Distance Graph */}
             {/* <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6"> */}
             {/* <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-3 sm:p-4 md:p-5 flex-1 flex flex-col"> */}
-            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-3 sm:p-4 md:p-5 flex-1 flex flex-col min-h-[350px] md:min-h-0">
-              <div className="flex items-center justify-between mb-6">
+            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-3 sm:p-4 md:p-5 flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="flex items-center justify-between mb-3 shrink-0">
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg">
                     <TrendingUp className="w-5 h-5 text-white" />
@@ -908,7 +939,8 @@ const ProcessLogs = () => {
                     config={selectedLog.configData}
                   />
                 ) : (
-                <div className="relative w-full" style={{ minHeight: '300px', height: '100%' }}>
+                <div className="relative w-full flex-1 min-h-0">
+                  <div className="absolute inset-0">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart
                       margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
@@ -979,13 +1011,14 @@ const ProcessLogs = () => {
                       )}
                     </LineChart>
                   </ResponsiveContainer>
+                  </div>
                 </div>
                 )
               ) : (
                 // <div className="h-96 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200">
                 // <div className="h-[600px] flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200">
                 // <div className="h-full flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200">
-                <div className="w-full min-h-[300px] h-full flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200">
+                <div className="w-full flex-1 min-h-0 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200">
                   <div className="text-center text-slate-500">
                     <TrendingUp className="w-16 h-16 mx-auto mb-4 opacity-30" />
                     <p className="text-lg font-medium text-slate-600">
@@ -1287,7 +1320,7 @@ const ThreePointLogCharts = ({ peakSeries, barSlots, config }) => {
 
   if (!hasLineData && !hasBarData) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200 min-h-[300px]">
+      <div className="flex-1 min-h-0 flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 rounded-xl border-2 border-dashed border-slate-200">
         <p className="text-slate-500 text-sm text-center px-4">
           No 3-point chart data found in this log file.
         </p>
@@ -1296,27 +1329,29 @@ const ThreePointLogCharts = ({ peakSeries, barSlots, config }) => {
   }
 
   return (
-    <div className="flex-1 flex flex-col gap-4 min-h-0">
-      <div className="flex-1 bg-slate-50/50 rounded-xl border border-slate-200 p-3 min-h-[200px] flex flex-col">
+    <div className="flex-1 min-h-0 flex flex-col gap-3">
+      <div className="flex-[3] min-h-0 bg-slate-50/50 rounded-xl border border-slate-200 p-3 flex flex-col overflow-hidden">
         <div className="mb-2 shrink-0">
           <span className="text-sm font-bold text-slate-800">Force vs Test Distance</span>
           <span className="text-xs text-slate-400 ml-2">Multi-step peaks</span>
         </div>
-        <div className="flex-1 min-h-[180px]">
-          {hasLineData ? (
-            <ChartJsLine
-              data={buildMultiPeakChartConfig(peakSeries)}
-              options={buildMultiPeakChartOptions()}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center text-slate-400 text-xs">
-              No peak line data
-            </div>
-          )}
+        <div className="relative flex-1 min-h-0">
+          <div className="absolute inset-0">
+            {hasLineData ? (
+              <ChartJsLine
+                data={buildMultiPeakChartConfig(peakSeries)}
+                options={buildMultiPeakChartOptions()}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+                No peak line data
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="shrink-0 bg-slate-50/50 rounded-xl border border-slate-200 p-3 flex flex-col" style={{ height: "220px" }}>
+      <div className="flex-[2] min-h-0 bg-slate-50/50 rounded-xl border border-slate-200 p-3 flex flex-col overflow-hidden">
         <div className="mb-2 shrink-0 flex items-center justify-between">
           <div>
             <span className="text-sm font-bold text-slate-800">Force vs Horizontal Distance</span>
@@ -1329,18 +1364,20 @@ const ThreePointLogCharts = ({ peakSeries, barSlots, config }) => {
             </span>
           )}
         </div>
-        <div className="flex-1 min-h-0">
-          {hasBarData ? (
-            <ChartJsBar
-              key={completedBars.map((b) => `${b.horizontalMm}-${b.maxForce}`).join("-")}
-              data={buildBarChartConfig(barSlots)}
-              options={buildBarChartOptions(testLengthMax)}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center text-slate-400 text-xs">
-              No bar chart data
-            </div>
-          )}
+        <div className="relative flex-1 min-h-0">
+          <div className="absolute inset-0">
+            {hasBarData ? (
+              <ChartJsBar
+                key={completedBars.map((b) => `${b.horizontalMm}-${b.maxForce}`).join("-")}
+                data={buildBarChartConfig(barSlots)}
+                options={buildBarChartOptions(testLengthMax)}
+              />
+            ) : (
+              <div className="h-full flex items-center justify-center text-slate-400 text-xs">
+                No bar chart data
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
