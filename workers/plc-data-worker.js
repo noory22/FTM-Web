@@ -13,6 +13,15 @@ process.on('disconnect', () => {
   } catch (e) { /* ignore */ }
   process.exit(0);
 });
+
+// Process-level uncaught exception safety handlers
+process.on('uncaughtException', (err) => {
+  console.warn('⚠️ Modbus worker uncaught exception (handled safely):', err && err.message ? err.message : err);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.warn('⚠️ Modbus worker unhandled rejection (handled safely):', reason && reason.message ? reason.message : reason);
+});
 const ModbusRTU = require('modbus-serial');
 const {
   BAUDRATE,
@@ -48,6 +57,12 @@ const {
 const { toSigned16, registersToFloat32LE, registersToFloat32BE } = require('./plc-read-utils');
 
 const client = new ModbusRTU();
+
+if (typeof client.on === 'function') {
+  client.on('error', (err) => {
+    console.warn('⚠️ ModbusRTU client error:', err && err.message ? err.message : err);
+  });
+}
 
 let isConnected = false;
 let PORT = null;
@@ -228,6 +243,10 @@ async function verifyPulses(clientInstance) {
   console.log('🔍 Verifying 3 continuous pulses (0 -> 1 transitions) on COIL_LLS (3922)...');
 
   while (Date.now() - startTime < maxWaitTime) {
+    if (!clientInstance.isOpen) {
+      console.warn('❌ Port closed or aborted during pulse verification.');
+      return false;
+    }
     try {
       const res = await clientInstance.readCoils(COIL_LLS, 1);
       if (res && res.data && res.data.length > 0) {
@@ -293,6 +312,20 @@ async function connect(targetPort) {
       stopBits: 1,
       parity: 'Even',
     });
+
+    // Safeguard the underlying port instance from unhandled 'error' events
+    if (client._port) {
+      if (typeof client._port.on === 'function') {
+        client._port.on('error', (err) => {
+          console.warn(`⚠️ RTUBufferedPort error on ${targetPort}:`, err && err.message ? err.message : err);
+        });
+      }
+      if (client._port._client && typeof client._port._client.on === 'function') {
+        client._port._client.on('error', (err) => {
+          console.warn(`⚠️ SerialPort error on ${targetPort}:`, err && err.message ? err.message : err);
+        });
+      }
+    }
 
     client.setID(1);
     // Set Modbus response timeout to 1000ms

@@ -363,6 +363,44 @@ async function connectModbus(targetPort) {
   }
 }
 
+function getPortPriority(port) {
+  const pnp = (port.pnpId || '').toUpperCase();
+  const mfg = (port.manufacturer || '').toUpperCase();
+  const vid = (port.vendorId || '').toUpperCase();
+
+  // 1. Detect Bluetooth virtual ports (lowest priority)
+  const isBluetooth = pnp.includes('BTHENUM') ||
+                      pnp.includes('BTH\\') ||
+                      pnp.includes('BLUETOOTH') ||
+                      (mfg.includes('MICROSOFT') && !vid);
+
+  if (isBluetooth) {
+    return 0;
+  }
+
+  // 2. Detect True Hardware USB-to-Serial Adapters (highest priority)
+  const isUsb = Boolean(
+    vid ||
+    port.productId ||
+    pnp.includes('USB') ||
+    pnp.includes('FTDIBUS') ||
+    mfg.includes('FTDI') ||
+    mfg.includes('SILICON LABS') ||
+    mfg.includes('PROLIFIC') ||
+    mfg.includes('WCH') ||
+    mfg.includes('CH34') ||
+    mfg.includes('CP210') ||
+    mfg.includes('SEGGER')
+  );
+
+  if (isUsb) {
+    return 2;
+  }
+
+  // 3. Motherboard legacy COM or PCI serial ports
+  return 1;
+}
+
 // -------------------------
 // Helper: Find and Connect to Port logic
 // -------------------------
@@ -378,20 +416,23 @@ async function findAndConnectPort() {
 
     console.log(`📋 Found ${ports.length} port(s):`);
     ports.forEach((p, idx) => {
-      console.log(`   [${idx + 1}] ${p.path} | Manufacturer: ${p.manufacturer || 'N/A'} | VID: ${p.vendorId || 'N/A'} | PID: ${p.productId || 'N/A'} | PnP: ${p.pnpId || 'N/A'}`);
+      const prio = getPortPriority(p);
+      const tag = prio === 2 ? 'USB-Serial' : prio === 1 ? 'Hardware COM' : 'Bluetooth/Virtual';
+      console.log(`   [${idx + 1}] ${p.path} | [${tag}] | Manufacturer: ${p.manufacturer || 'N/A'} | VID: ${p.vendorId || 'N/A'} | PID: ${p.productId || 'N/A'} | PnP: ${p.pnpId || 'N/A'}`);
     });
 
-    // Prioritize USB-to-Serial devices over motherboard legacy ports (COM1/COM2)
+    // Prioritize True USB-Serial > Physical COM > Bluetooth/Virtual, sorted by COM number ascending
     const sortedPorts = [...ports].sort((a, b) => {
-      const aIsUsb = Boolean(a.vendorId || a.productId || (a.pnpId && a.pnpId.includes('USB')) || (a.manufacturer && !a.manufacturer.includes('Standard')));
-      const bIsUsb = Boolean(b.vendorId || b.productId || (b.pnpId && b.pnpId.includes('USB')) || (b.manufacturer && !b.manufacturer.includes('Standard')));
-      if (aIsUsb && !bIsUsb) return -1;
-      if (!aIsUsb && bIsUsb) return 1;
+      const prioA = getPortPriority(a);
+      const prioB = getPortPriority(b);
 
-      // If neither or both, prefer COM3+ over COM1/COM2
+      if (prioA !== prioB) {
+        return prioB - prioA; // Higher priority first
+      }
+
       const aNum = parseInt(a.path.replace(/\D/g, ''), 10) || 0;
       const bNum = parseInt(b.path.replace(/\D/g, ''), 10) || 0;
-      return bNum - aNum;
+      return aNum - bNum;
     });
 
     for (const portInfo of sortedPorts) {

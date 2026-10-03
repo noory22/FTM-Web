@@ -364,6 +364,44 @@ async function connectModbus(targetPort) {
   }
 }
 
+function getPortPriority(port) {
+  const pnp = (port.pnpId || '').toUpperCase();
+  const mfg = (port.manufacturer || '').toUpperCase();
+  const vid = (port.vendorId || '').toUpperCase();
+
+  // 1. Detect Bluetooth virtual ports (lowest priority)
+  const isBluetooth = pnp.includes('BTHENUM') ||
+                      pnp.includes('BTH\\') ||
+                      pnp.includes('BLUETOOTH') ||
+                      (mfg.includes('MICROSOFT') && !vid);
+
+  if (isBluetooth) {
+    return 0;
+  }
+
+  // 2. Detect True Hardware USB-to-Serial Adapters (highest priority)
+  const isUsb = Boolean(
+    vid ||
+    port.productId ||
+    pnp.includes('USB') ||
+    pnp.includes('FTDIBUS') ||
+    mfg.includes('FTDI') ||
+    mfg.includes('SILICON LABS') ||
+    mfg.includes('PROLIFIC') ||
+    mfg.includes('WCH') ||
+    mfg.includes('CH34') ||
+    mfg.includes('CP210') ||
+    mfg.includes('SEGGER')
+  );
+
+  if (isUsb) {
+    return 2;
+  }
+
+  // 3. Motherboard legacy COM or PCI serial ports
+  return 1;
+}
+
 // -------------------------
 // Helper: Find and Connect to Port logic
 // -------------------------
@@ -371,16 +409,36 @@ async function findAndConnectPort() {
   try {
     console.log("🔍 Scanning for available COM ports...");
     const ports = await SerialPort.list();
-    console.log("Found ports:", ports.map(p => p.path).join(', '));
-
-    if (ports.length === 0) {
-      console.log("⚠️ No COM ports found.");
+    
+    if (!ports || ports.length === 0) {
+      console.log("⚠️ No COM ports found in system.");
       return false;
     }
 
-    for (const portInfo of ports) {
+    console.log(`📋 Found ${ports.length} port(s):`);
+    ports.forEach((p, idx) => {
+      const prio = getPortPriority(p);
+      const tag = prio === 2 ? 'USB-Serial' : prio === 1 ? 'Hardware COM' : 'Bluetooth/Virtual';
+      console.log(`   [${idx + 1}] ${p.path} | [${tag}] | Manufacturer: ${p.manufacturer || 'N/A'} | VID: ${p.vendorId || 'N/A'} | PID: ${p.productId || 'N/A'} | PnP: ${p.pnpId || 'N/A'}`);
+    });
+
+    // Prioritize True USB-Serial > Physical COM > Bluetooth/Virtual, sorted by COM number ascending
+    const sortedPorts = [...ports].sort((a, b) => {
+      const prioA = getPortPriority(a);
+      const prioB = getPortPriority(b);
+
+      if (prioA !== prioB) {
+        return prioB - prioA; // Higher priority first
+      }
+
+      const aNum = parseInt(a.path.replace(/\D/g, ''), 10) || 0;
+      const bNum = parseInt(b.path.replace(/\D/g, ''), 10) || 0;
+      return aNum - bNum;
+    });
+
+    for (const portInfo of sortedPorts) {
       const portPath = portInfo.path;
-      console.log(`👉 Trying port: ${portPath}`);
+      console.log(`👉 Trying port: ${portPath} (${portInfo.manufacturer || 'Unknown device'})`);
 
       const success = await connectModbus(portPath);
       if (success) {
@@ -389,7 +447,7 @@ async function findAndConnectPort() {
       }
     }
 
-    console.log("❌ Could not find a valid Modbus device on any port.");
+    console.log("❌ Could not find a valid Modbus device on any scanned port.");
     return false;
 
   } catch (err) {
