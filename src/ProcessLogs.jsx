@@ -17,6 +17,7 @@ import {
   RotateCcw,
   Download,
   Camera,
+  Settings,
 } from "lucide-react";
 import { Line as ChartJsLine, Bar as ChartJsBar } from "react-chartjs-2";
 import {
@@ -452,6 +453,66 @@ const ProcessLogs = () => {
     } catch {
       return "--";
     }
+  };
+
+  const renderConfigSummaryBar = () => {
+    if (!selectedLog || !selectedLog.configData) return null;
+    const config = selectedLog.configData;
+
+    let params = [];
+    if (testType === '2-point') {
+      params = [
+        { label: "Catheter-LoadCell", value: config.catheterToLoadCellDistance ? `${config.catheterToLoadCellDistance} mm` : "--" },
+        { label: "Probe Limit", value: config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--" },
+        { label: "Force Limit", value: config.forceLimit ? `${config.forceLimit} gf` : "--" },
+        { label: "Test Speed", value: config.testSpeed ? `${config.testSpeed} mm/min` : "--" },
+      ];
+    } else if (testType === '3-point') {
+      params = [
+        { label: "Test Length", value: config.testLength ? `${config.testLength} mm` : "--" },
+        { label: "Interval", value: config.measurementInterval ? `${config.measurementInterval} mm` : "--" },
+        { label: "Probe Limit", value: config.probeTravelLimit ? `${config.probeTravelLimit} mm` : "--" },
+        { label: "Force Limit", value: config.forceLimit ? `${config.forceLimit} gf` : "--" },
+        { label: "Test Speed", value: config.testSpeed ? `${config.testSpeed} mm/min` : "--" },
+        { label: "Horiz Speed", value: config.horizontalSpeed ? `${config.horizontalSpeed} mm/min` : "--" },
+      ];
+    } else {
+      params = [
+        { label: "Path Length", value: (config.pathlength || config.pathLength) ? `${config.pathlength || config.pathLength} mm` : "--" },
+        { label: "Threshold", value: config.thresholdForce ? `${config.thresholdForce} gf` : "--" },
+        { label: "Insertion", value: config.insertionLength ? `${config.insertionLength} mm` : "--" },
+        { label: "Retraction", value: config.retractionLength ? `${config.retractionLength} mm` : "--" },
+      ];
+      if (config.numberOfCurves && config.numberOfCurves !== "--") {
+        params.push({ label: "Curves", value: config.numberOfCurves });
+      }
+    }
+
+    return (
+      <div className="mb-2 shrink-0 bg-slate-50/90 border border-slate-200/90 rounded-xl px-3 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center space-x-2 min-w-0">
+          <Settings className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+          <span className="font-semibold text-slate-800 truncate text-[11px] sm:text-xs">
+            {config.configName || "Configuration"}
+          </span>
+          <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-blue-100 text-blue-700 shrink-0">
+            {testType === '3-point' ? '3-Point' : testType === '2-point' ? '2-Point' : 'Standard'}
+          </span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          {params.map((item, idx) => (
+            <div
+              key={idx}
+              className="flex items-center space-x-1 bg-white px-2 py-0.5 rounded-lg border border-slate-200 text-[10px] sm:text-[11px]"
+            >
+              <span className="text-slate-500 font-medium">{item.label}:</span>
+              <span className="font-bold text-slate-700">{item.value}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   const renderCurveReferenceLines = () => {
@@ -960,9 +1021,17 @@ const ProcessLogs = () => {
                     <h2 className="text-xl font-semibold text-slate-800">
                       {testType === '3-point' ? '3-Point Test Analysis' : 'Force vs Distance Analysis'}
                     </h2>
-                    <p className="text-slate-500 text-xs font-medium">
-                      {selectedLog ? (selectedLog.displayName || selectedLog.filename) : "Logged data analysis"}
-                    </p>
+                    <div className="flex items-center space-x-2 text-xs text-slate-500 font-medium mt-0.5">
+                      <span className="truncate max-w-[280px]">
+                        {selectedLog ? (selectedLog.displayName || selectedLog.filename) : "Logged data analysis"}
+                      </span>
+                      {selectedLog && (
+                        <>
+                          <span className="text-slate-300">•</span>
+                          <span>{formatDate(selectedLog.date)} {formatTime(selectedLog.date, selectedLog.time)}</span>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -1000,6 +1069,9 @@ const ProcessLogs = () => {
                   )}
                 </div>
               </div>
+
+              {/* Configuration Summary Strip (Included in Graph & Snapshot) */}
+              {renderConfigSummaryBar()}
 
               {selectedLog ? (
                 testType === '3-point' ? (
