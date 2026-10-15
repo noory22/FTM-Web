@@ -864,6 +864,54 @@ async function downloadLogFile(filePath, defaultFileName) {
   }
 }
 
+async function saveGraphSnapshot(rect, defaultFileName) {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return { success: false, error: 'Main window not available' };
+    }
+
+    let captureRect = undefined;
+    if (rect && typeof rect.x === 'number' && typeof rect.y === 'number' && rect.width > 0 && rect.height > 0) {
+      captureRect = {
+        x: Math.max(0, Math.round(rect.x)),
+        y: Math.max(0, Math.round(rect.y)),
+        width: Math.max(1, Math.round(rect.width)),
+        height: Math.max(1, Math.round(rect.height)),
+      };
+    }
+
+    const image = await mainWindow.webContents.capturePage(captureRect);
+    const pngBuffer = image.toPNG();
+
+    let defaultDir;
+    try {
+      defaultDir = app.getPath('pictures');
+    } catch {
+      defaultDir = app.getPath('downloads');
+    }
+    const defaultPath = path.join(defaultDir, defaultFileName || `graph_snapshot_${Date.now()}.png`);
+
+    const { canceled, filePath: savePath } = await dialog.showSaveDialog(mainWindow, {
+      title: 'Save Graph Snapshot',
+      defaultPath: defaultPath,
+      filters: [
+        { name: 'PNG Images', extensions: ['png'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    });
+
+    if (canceled || !savePath) {
+      return { success: false, canceled: true };
+    }
+
+    await fsPromises.writeFile(savePath, pngBuffer);
+    return { success: true, savePath };
+  } catch (error) {
+    console.error('Error saving graph snapshot:', error);
+    return { success: false, error: error.message };
+  }
+}
+
 // ============================
 // Create Window - Updated for electron-builder
 // ============================
@@ -2151,6 +2199,10 @@ ipcMain.handle("delete-log-file", async (event, filePath) => {
 
 ipcMain.handle("download-log-file", async (event, filePath, defaultFileName) => {
   return await downloadLogFile(filePath, defaultFileName);
+});
+
+ipcMain.handle("save-graph-snapshot", async (event, rect, defaultFileName) => {
+  return await saveGraphSnapshot(rect, defaultFileName);
 });
 
 

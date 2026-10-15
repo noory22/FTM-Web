@@ -16,6 +16,7 @@ import {
   Gauge,
   RotateCcw,
   Download,
+  Camera,
 } from "lucide-react";
 import { Line as ChartJsLine, Bar as ChartJsBar } from "react-chartjs-2";
 import {
@@ -91,6 +92,8 @@ const ProcessLogs = () => {
   // this page to exactly that height, so the graphs always fit without scrolling.
   const pageRef = useRef(null);
   const [pageHeight, setPageHeight] = useState(null);
+  const graphCardRef = useRef(null);
+  const [isCapturing, setIsCapturing] = useState(false);
 
   useEffect(() => {
     const updateHeight = () => {
@@ -369,6 +372,53 @@ const ProcessLogs = () => {
       alert("Error downloading log file: " + error.message);
     } finally {
       setDownloadingFile(null);
+    }
+  };
+
+  const handleTakeSnapshot = async () => {
+    if (!selectedLog || !graphCardRef.current) return;
+
+    try {
+      setIsCapturing(true);
+
+      // Brief delay to allow React to hide the snapshot button before capturing
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      if (!graphCardRef.current) return;
+      const domRect = graphCardRef.current.getBoundingClientRect();
+      const rect = {
+        x: Math.round(domRect.x),
+        y: Math.round(domRect.y),
+        width: Math.round(domRect.width),
+        height: Math.round(domRect.height),
+      };
+
+      const baseName = (selectedLog.filename || "graph")
+        .replace(/\.csv$/i, "")
+        .replace(/[^a-zA-Z0-9_-]/g, "_");
+      const defaultFileName = `${baseName}_graph.png`;
+
+      if (window.api && window.api.saveGraphSnapshot) {
+        const result = await window.api.saveGraphSnapshot(rect, defaultFileName);
+        if (result && result.success) {
+          setSuccessMessage(`Graph snapshot saved successfully!`);
+          setShowSuccessMessage(true);
+          setTimeout(() => {
+            setShowSuccessMessage(false);
+          }, 2500);
+        } else if (result && result.canceled) {
+          // User canceled the file save dialog
+        } else {
+          alert("Error saving snapshot: " + (result?.error || "Unknown error"));
+        }
+      } else {
+        alert("Snapshot feature is only available in the desktop application.");
+      }
+    } catch (error) {
+      console.error("Error capturing graph snapshot:", error);
+      alert("Error capturing snapshot: " + error.message);
+    } finally {
+      setIsCapturing(false);
     }
   };
 
@@ -897,7 +947,10 @@ const ProcessLogs = () => {
             {/* Force vs Distance Graph */}
             {/* <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-6"> */}
             {/* <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-3 sm:p-4 md:p-5 flex-1 flex flex-col"> */}
-            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-3 sm:p-4 md:p-5 flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div
+              ref={graphCardRef}
+              className="bg-white rounded-2xl shadow-xl border border-slate-200 p-3 sm:p-4 md:p-5 flex-1 min-h-0 flex flex-col overflow-hidden"
+            >
               <div className="flex items-center justify-between mb-3 shrink-0">
                 <div className="flex items-center space-x-3">
                   <div className="p-2 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg">
@@ -907,28 +960,45 @@ const ProcessLogs = () => {
                     <h2 className="text-xl font-semibold text-slate-800">
                       {testType === '3-point' ? '3-Point Test Analysis' : 'Force vs Distance Analysis'}
                     </h2>
-                    <p className="text-slate-500 text-xs font-medium">Logged data analysis</p>
-                    {/* <p className="text-slate-600 text-sm">
-                      Insertion (0 → Max) and Retraction (Max → 0)
-                    </p> */}
+                    <p className="text-slate-500 text-xs font-medium">
+                      {selectedLog ? (selectedLog.displayName || selectedLog.filename) : "Logged data analysis"}
+                    </p>
                   </div>
                 </div>
-                {selectedLog && testType !== '3-point' && (
-                  <div className="flex items-center space-x-6 bg-slate-50/50 px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-8 h-1 bg-blue-500 rounded-full shadow-sm shadow-blue-500/50" />
-                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
-                        {testType === '2-point' ? 'Test Curve' : 'Insertion'}
-                      </span>
-                    </div>
-                    {testType !== '2-point' && (
+
+                <div className="flex items-center space-x-3">
+                  {selectedLog && testType !== '3-point' && (
+                    <div className="flex items-center space-x-6 bg-slate-50/50 px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
                       <div className="flex items-center space-x-3">
-                        <div className="w-8 h-1 bg-red-500 rounded-full shadow-sm shadow-red-500/50" />
-                        <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Retraction</span>
+                        <div className="w-8 h-1 bg-blue-500 rounded-full shadow-sm shadow-blue-500/50" />
+                        <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">
+                          {testType === '2-point' ? 'Test Curve' : 'Insertion'}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                )}
+                      {testType !== '2-point' && (
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-1 bg-red-500 rounded-full shadow-sm shadow-red-500/50" />
+                          <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Retraction</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {selectedLog && (
+                    <button
+                      type="button"
+                      onClick={handleTakeSnapshot}
+                      disabled={isCapturing}
+                      className={`flex items-center space-x-2 px-3 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-sm hover:shadow transition-all text-xs font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                        isCapturing ? "opacity-0 pointer-events-none" : ""
+                      }`}
+                      title="Save PNG snapshot of graph card"
+                    >
+                      <Camera className="w-4 h-4" />
+                      <span>{isCapturing ? "Capturing..." : "Snapshot"}</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {selectedLog ? (
